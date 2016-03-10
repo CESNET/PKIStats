@@ -1,0 +1,26 @@
+# NetBeans specific #
+nbproject/private/
+build/
+nbbuild/
+dist/
+nbdist/
+nbactions.xml
+nb-configuration.xml
+
+# Class Files #
+*.class
+
+# Package Files #
+*.jar
+*.war
+*.ear
+
+# Original ini
+options.ini
+
+# Everything except .java, .ini
+*.xml
+*.mf
+*ejbca.*
+nbproject/
+src/META-INF/
