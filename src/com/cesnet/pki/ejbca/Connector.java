@@ -2,6 +2,7 @@ package com.cesnet.pki.ejbca;
 
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
@@ -33,8 +34,15 @@ import org.ejbca.core.protocol.ws.*;
  */
 public class Connector {
    
-    private final String INI_FILE = "options_public.ini";
+    private final String INI_FILE = "options.ini";//_public.ini";    
     
+    private final int MATCH_TYPE_BEGINSWITH = 1;
+    private final int MATCH_WITH_USERNAME = 0;
+    private final int ORGANIZATION_UNIT = 2;
+    
+    private final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
+    private final Map<String, Integer> validCAs = new HashMap<>();
+    private final String characters = "abcdefghijklmnopqrstuvwxyz0123456789";
     private EjbcaWS ejbcaws;
     private Properties p;
     private List<UserDataVOWS> UserDataList;
@@ -43,58 +51,94 @@ public class Connector {
     public static void main(String[] args) {
         Connector con = new Connector();
        
-        try {  
-            con.p = con.loadIniFile();        
-
+        try {
+            // init
+            con.certFactory = CertificateFactory.getInstance("X.509");
+            
+            con.p = con.loadIniFile();
+            
             con.connectEjbCA();
             
-            con.init();
+            con.searchValidUsername(new StringBuilder());
             
-            if (con.UserDataList != null){                
-                con.countValidCAs();                
-                
-            } else {
-                System.out.println("\tnebyl nalezen zadny zaznam");
-            }
-        
-        } catch (MalformedURLException | IllegalQueryException_Exception | CertificateException | ParseException | AuthorizationDeniedException_Exception | EjbcaException_Exception ex) {
+            con.printResults();
+            
+        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (IOException | InvalidNameException ex) {
-            Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
-        }
-        
+        } 
     }
-     
+    
+    /** 
+     * iterates records by alphabet (ejbcaws.findUser returns max 100 records)
+     * if records found, calls countValidCAs()
+     * 
+     * @param stringBuilder - actual part of username to match
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     * @throws CertificateException - This exception indicates one of a variety of certificate problems   
+     * @throws ParseException - if the beginning of the specified string cannot be parsed.
+     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     */    
+    private void searchValidUsername(StringBuilder stringBuilder) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+                
+        if (stringBuilder.length() > 7) {
+            // username can not be longer then 7 characters
+            return;
+        }        
+        
+        for (int i = 0; i < characters.length(); i++) {            
+            
+            stringBuilder.append(characters.charAt(i));
+            
+            if (stringBuilder.length() == 3) {
+                // username is in format xxx-xxx, where x can be number or letter
+                stringBuilder.append('-');
+            }            
+
+            int numRecords = initUserData(stringBuilder.toString());
+
+            // maximum number of UserDataVOWS objects the ejbca returns is 100
+            if (numRecords > 100) {
+                searchValidUsername(stringBuilder);                
+            } else if (numRecords != 0) { 
+                countValidCAs();                 
+            }             
+
+            if (stringBuilder.length() == 4) {
+                // delete last '-'
+                stringBuilder.deleteCharAt(stringBuilder.length()-1);
+            }
+            
+            stringBuilder.deleteCharAt(stringBuilder.length()-1);   
+        }
+    }
+    
     /**
      * connect to EjbCA
      * 
-     * @throws MalformedURLException 
+     * @throws MalformedURLException - if no protocol is specified, or an unknown protocol is found, or spec is null 
      */
-    private void connectEjbCA() throws MalformedURLException   {
+    private void connectEjbCA() throws MalformedURLException  {
         
         System.setProperty("javax.net.ssl.keyStore", p.getProperty("keyStore"));
         System.setProperty("javax.net.ssl.keyStorePassword", p.getProperty("keyStorePassword"));
 
-        //System.setProperty("javax.net.ssl.trustStore","keystore.jks");
-        //System.setProperty("javax.net.ssl.trustStorePassword","heslo"); 
-                
-        String urlstr = "https://ejbca.cesnet-ca.cz:8443/ejbca/ejbcaws/ejbcaws?wsdl";
-
-        QName qname = new QName("http://ws.protocol.core.ejbca.org/", "EjbcaWSService");
-        URL url = new URL(urlstr);
+        QName qname = new QName(p.getProperty("serviceURI"), p.getProperty("serviceLocalPart"));
+        URL url = new URL(p.getProperty("url"));
         Service service = Service.create(url, qname);
 
-        ejbcaws = (EjbcaWS) service.getPort(new QName("http://ws.protocol.core.ejbca.org/", "EjbcaWSPort"), EjbcaWS.class);
-         
+        ejbcaws = (EjbcaWS) service.getPort(new QName(p.getProperty("portURI"), p.getProperty("portLocalPart")), EjbcaWS.class);
     }
     
     /**
      * load options.ini and return its values
      * 
      * @return Properties from ini file 'options.ini'
-     * @throws IOException if an error occurred when reading from the input stream.
+     * @throws IOException if an error occurred when reading from the input stream
+     * @throws FileNotFoundException - if the file does not exist, is a directory rather than a regular file, or for some other reason cannot be opened for reading
      */
-    private Properties loadIniFile() throws IOException  {
+    private Properties loadIniFile() throws IOException, FileNotFoundException {
         
         Properties properties = new Properties();
         properties.load(new FileInputStream(INI_FILE));
@@ -103,57 +147,51 @@ public class Connector {
     }
 
     /**
-     * set up initial variables
+     * set up UserDataList by given matchvalue
      * 
-     * @throws AuthorizationDeniedException_Exception from ejbcaws.findUser
-     * @throws EjbcaException_Exception from ejbcaws.findUser
-     * @throws IllegalQueryException_Exception from ejbcaws.findUser
-     * @throws CertificateException if no Provider supports a CertificateFactorySpi implementation for the specified type.
+     * @param matchValue - The matchvalue to set for finding users
+     * @return size of created UserDataList
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws IllegalQueryException_Exception - if a given query was not legal 
      */
-    private void init() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException {
+    private int initUserData(String matchValue) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
         
         // create user match from properties to find users
         UserMatch um = new UserMatch();
 
-        um.setMatchtype(Integer.parseInt(p.getProperty("Matchtype")));
-        um.setMatchwith(Integer.parseInt(p.getProperty("Matchwith")));
-        um.setMatchvalue(p.getProperty("Matchvalue"));
+        um.setMatchtype(MATCH_TYPE_BEGINSWITH);
+        um.setMatchwith(MATCH_WITH_USERNAME);
+        um.setMatchvalue(matchValue);//p.getProperty("Matchvalue"));
 
         // init user data list
-        UserDataList = ejbcaws.findUser(um);
-        System.out.println("\tfound " + UserDataList.size() + " records\n");
+        UserDataList = ejbcaws.findUser(um);      
         
-        // init certificate factory
-         certFactory = CertificateFactory.getInstance("X.509");   
-                
+        return UserDataList.size();
     }
     
     /**
-     * count and print number of valid CA and organization name at given date
+     * count number of valid CA and organization name at given date
      * 
-     * @throws IllegalQueryException_Exception
-     * @throws CertificateException
-     * @throws ParseException
-     * @throws AuthorizationDeniedException_Exception
-     * @throws EjbcaException_Exception
-     * @throws InvalidNameException 
+     * @throws CertificateException - This exception indicates one of a variety of certificate problems
+     * @throws ParseException - if the beginning of the specified string cannot be parsed.
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
      */
-    private void countValidCAs() throws IllegalQueryException_Exception, CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException {
+    private void countValidCAs() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException{
                 
-        // init variables
-        SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
-        
-        Map<String, Integer> validCAs = new HashMap<>();
-        
+        // init variables               
         X509Certificate CA;
-        String organization;
-        
-        // traverses all the data and count valid CAs
+        String organization;       
+               
+        // traverses all the current data and count valid CAs
         for (UserDataVOWS data : UserDataList) {                     
         //for (int i = 0; i < 5; i++) {   UserDataVOWS data = UserDataList.get(i); // for DEBUG
             
             String username = data.getUsername();
-            List<Certificate> certifList = ejbcaws.findCerts(username, true);
+            
+            List<Certificate> certifList = ejbcaws.findCerts(username, false);
 
             for (Certificate encodedCA : certifList) {  
 
@@ -168,33 +206,27 @@ public class Connector {
                 }
             }
         }
-        
-        // print results
-        System.out.println("Number of valid CA at " + p.getProperty("CAvalidAtDate") + " is:");
-        for (Map.Entry entry : validCAs.entrySet()) {
-            System.out.println(entry.getValue() + "\t" + entry.getKey() );
-        }
-        
     }
  
     /**
      * @param cert - certificate to parse
      * @return organization name parsed from DN
-     * @throws InvalidNameException 
+     * @throws InvalidNameException - if a syntax violation is detected. 
      */
     private String getOrganizationName(X509Certificate cert) throws InvalidNameException {
         String dn = (String)cert.getSubjectDN().getName();
                 
         LdapName ldapDN = new LdapName(dn);                
         List<Rdn> listRdn = ldapDN.getRdns();
-
-        return (String) listRdn.get(2).getValue();
+        
+        // Rdn types parsed from given certificate {DC=domain_component, DC=domain_component, O=organization, CN=common_name}
+        return (String) listRdn.get(ORGANIZATION_UNIT).getValue();
     }
     
     /** 
      * @param source - encoded certificate
      * @return decoded generated certificate
-     * @throws CertificateException 
+     * @throws CertificateException - This exception indicates one of a variety of certificate problems 
      */
     private X509Certificate decodeCertificate(byte[] source) throws CertificateException {       
            
@@ -204,10 +236,10 @@ public class Connector {
     }    
     
     
-    /** 
+    /**
      * @param cert - certificate with its validity
      * @param date - date to compare
-     * @return if certificate is valid at given date
+     * @return true if certificate is valid at given date
      */
     private boolean isCaValidAtDay(X509Certificate cert, Date date) {
         
@@ -215,7 +247,19 @@ public class Connector {
     }
     
     /**
-     * only for printing data from UserDataVOWS
+     * prints number of valid CA at specific date for each organization
+     */
+    private void printResults() {
+        // print results
+        System.out.println("Number of valid CA at " + p.getProperty("CAvalidAtDate") + " is:");
+        
+        for (Map.Entry entry : validCAs.entrySet()) {
+            System.out.println(entry.getValue() + "\t" + entry.getKey() );
+        }
+    }
+    
+    /**
+     * prints all data from UserDataVOWS
      * 
      * @param data 
      */
