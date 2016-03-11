@@ -27,18 +27,17 @@ import javax.xml.bind.DatatypeConverter;
 import javax.xml.namespace.QName;
 import javax.xml.ws.Service;
 import org.ejbca.core.protocol.ws.*;
- 
+
 /**
  * 
  * @author jana kejvalova
  */
 public class Connector {
    
-    private final String INI_FILE = "options.ini";//_public.ini";    
+    private final String INI_FILE = "options_public.ini";    
     
     private final int MATCH_TYPE_BEGINSWITH = 1;
     private final int MATCH_WITH_USERNAME = 0;
-    private final int ORGANIZATION_UNIT = 2;
     
     private final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
     private final Map<String, Integer> validCAs = new HashMap<>();
@@ -199,8 +198,8 @@ public class Connector {
                 
                 organization = getOrganizationName(CA);
                 
-                // if CA is valid, increment in map
-                if (isCaValidAtDay(CA, format.parse(p.getProperty("CAvalidAtDate")))) { 
+                // if CA contains organization and is valid, increment in map
+                if (organization != null && isCaValidAtDay(CA, format.parse(p.getProperty("CAvalidAtDate")))) { 
                     int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
                     validCAs.put(organization, count + 1);                
                 }
@@ -210,7 +209,7 @@ public class Connector {
  
     /**
      * @param cert - certificate to parse
-     * @return organization name parsed from DN
+     * @return organization name parsed from DN if exists, else null
      * @throws InvalidNameException - if a syntax violation is detected. 
      */
     private String getOrganizationName(X509Certificate cert) throws InvalidNameException {
@@ -219,8 +218,12 @@ public class Connector {
         LdapName ldapDN = new LdapName(dn);                
         List<Rdn> listRdn = ldapDN.getRdns();
         
-        // Rdn types parsed from given certificate {DC=domain_component, DC=domain_component, O=organization, CN=common_name}
-        return (String) listRdn.get(ORGANIZATION_UNIT).getValue();
+        for (Rdn rdn : listRdn) {
+            if ("O".equals(rdn.getType())) {
+                return (String) rdn.getValue();
+            }
+        }        
+        return null;
     }
     
     /** 
