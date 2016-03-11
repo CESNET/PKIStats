@@ -13,6 +13,7 @@ import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
+import java.util.ArrayList;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.List;
@@ -58,7 +59,8 @@ public class Connector {
             
             con.connectEjbCA();
             
-            con.searchValidUsername(new StringBuilder());
+            //con.searchValidUsernameAlphabetically(new StringBuilder());
+            con.searchValidUsernameBy100();
             
             con.printResults();
             
@@ -66,6 +68,48 @@ public class Connector {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         } 
     }
+    
+    /**
+     * iterates records by alphabet (ejbcaws.findUser returns max 100 records)
+     * after 100 records found, calls countValidCAs()
+     * 
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     * @throws CertificateException - This exception indicates one of a variety of certificate problems   
+     * @throws ParseException - if the beginning of the specified string cannot be parsed.
+     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     */  
+    private void searchValidUsernameBy100() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+         
+        List<UserDataVOWS> list = new ArrayList<>();
+        
+        for (char c : characters.toCharArray()) {   
+        
+            List<UserDataVOWS> remainingData = getUserData(String.valueOf(c));
+          
+            while(!remainingData.isEmpty()) {
+                list.add(remainingData.remove(0));
+            }
+            
+            if (list.size() > 20) {
+                //copy data after index 100 
+                while(list.size() > 20) {
+                    remainingData.add(list.remove(20));
+                }
+                
+                // delete all data after index 100                
+                list.subList(20, list.size()).clear();
+                
+                UserDataList = list;
+                
+                // count valid CA for 100 records
+                countValidCAs();
+                                
+                list = remainingData;                  
+            }             
+        }
+    } 
     
     /** 
      * iterates records by alphabet (ejbcaws.findUser returns max 100 records)
@@ -79,7 +123,7 @@ public class Connector {
      * @throws ParseException - if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
      */    
-    private void searchValidUsername(StringBuilder stringBuilder) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+    private void searchValidUsernameAlphabetically(StringBuilder stringBuilder) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
                 
         if (stringBuilder.length() > 7) {
             // username can not be longer then 7 characters
@@ -99,7 +143,7 @@ public class Connector {
 
             // maximum number of UserDataVOWS objects the ejbca returns is 100
             if (numRecords > 100) {
-                searchValidUsername(stringBuilder);                
+                searchValidUsernameAlphabetically(stringBuilder);                
             } else if (numRecords != 0) { 
                 countValidCAs();                 
             }             
@@ -167,6 +211,21 @@ public class Connector {
         UserDataList = ejbcaws.findUser(um);      
         
         return UserDataList.size();
+    }
+    
+    private List<UserDataVOWS> getUserData(String matchValue) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
+        
+        // create user match from properties to find users
+        UserMatch um = new UserMatch();
+
+        um.setMatchtype(MATCH_TYPE_BEGINSWITH);
+        um.setMatchwith(MATCH_WITH_USERNAME);
+        um.setMatchvalue(matchValue);//p.getProperty("Matchvalue"));
+
+        // init user data list
+        List<UserDataVOWS> list = ejbcaws.findUser(um);      
+        
+        return list;
     }
     
     /**
