@@ -14,11 +14,13 @@ import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Date;
-import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Properties;
+import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.naming.InvalidNameException;
@@ -38,19 +40,23 @@ public class Connector {
     private final String INI_FILE = "options_public.ini";    
     
     private final int MATCH_TYPE_BEGINSWITH = 1;
-    private final int MATCH_WITH_USERNAME = 0;
-    
+    private final int MATCH_WITH_USERNAME = 0;    
+    private final int EJBCA_MAX_RETURN_VALUE = 100;
+        
     private final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
-    private final Map<String, Integer> validCAs = new HashMap<>();
-    private final String characters = "abcdefghijklmnopqrstuvwxyz0123456789";
+   
+    private final String characters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-@";
+    private final Map<String, Integer> validCAs = new TreeMap<>();
+    private final HashSet<String> ExcludeOrgs = new HashSet<>();
+    private final HashSet<String> ExcludeUsers = new HashSet<>();
     private EjbcaWS ejbcaws;
-    private Properties p;
+    private Properties p;    
     private List<UserDataVOWS> UserDataList;
     private CertificateFactory certFactory;
     
     public static void main(String[] args) {
         Connector con = new Connector();
-       
+        
         try {
             // init
             con.certFactory = CertificateFactory.getInstance("X.509");
@@ -59,14 +65,31 @@ public class Connector {
             
             con.connectEjbCA();
             
-            //con.searchValidUsernameAlphabetically(new StringBuilder());
-            con.searchValidUsernameBy100();
+            con.searchValidUsername();
             
             con.printResults();
             
         } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         } 
+    }
+    
+    /**
+     * calls method for traversing all records
+     * 
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     * @throws CertificateException - This exception indicates one of a variety of certificate problems   
+     * @throws ParseException - if the beginning of the specified string cannot be parsed.
+     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     */
+    private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+        
+        UserDataList = searchValidUsernameBy100(new StringBuilder(), new ArrayList<>());
+        
+        // count valid CAs for remaining data (less than 100 records)
+        countValidCAs(); 
     }
     
     /**
@@ -80,85 +103,50 @@ public class Connector {
      * @throws ParseException - if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
      */  
-    private void searchValidUsernameBy100() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
-         
-        List<UserDataVOWS> list = new ArrayList<>();
+    private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
         
-        for (char c : characters.toCharArray()) {   
-        
-            List<UserDataVOWS> remainingData = getUserData(String.valueOf(c));
-          
-            while(!remainingData.isEmpty()) {
-                list.add(remainingData.remove(0));
-            }
+    for (char c : characters.toCharArray()) {            
             
-            if (list.size() > 20) {
-                //copy data after index 100 
-                while(list.size() > 20) {
-                    remainingData.add(list.remove(20));
-                }
-                
-                // delete all data after index 100                
-                list.subList(20, list.size()).clear();
-                
-                UserDataList = list;
-                
-                // count valid CA for 100 records
-                countValidCAs();
-                                
-                list = remainingData;                  
-            }             
-        }
-    } 
-    
-    /** 
-     * iterates records by alphabet (ejbcaws.findUser returns max 100 records)
-     * if records found, calls countValidCAs()
-     * 
-     * @param stringBuilder - actual part of username to match
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws IllegalQueryException_Exception - if a given query was not legal 
-     * @throws CertificateException - This exception indicates one of a variety of certificate problems   
-     * @throws ParseException - if the beginning of the specified string cannot be parsed.
-     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     */    
-    private void searchValidUsernameAlphabetically(StringBuilder stringBuilder) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
-                
-        if (stringBuilder.length() > 7) {
-            // username can not be longer then 7 characters
-            return;
-        }        
-        
-        for (int i = 0; i < characters.length(); i++) {            
-            
-            stringBuilder.append(characters.charAt(i));
-            
-            if (stringBuilder.length() == 3) {
-                // username is in format xxx-xxx, where x can be number or letter
-                stringBuilder.append('-');
-            }            
+            stringBuilder.append(c);
 
-            int numRecords = initUserData(stringBuilder.toString());
+            List<UserDataVOWS> remainingData = getUserData(stringBuilder.toString());
 
-            // maximum number of UserDataVOWS objects the ejbca returns is 100
-            if (numRecords > 100) {
-                searchValidUsernameAlphabetically(stringBuilder);                
-            } else if (numRecords != 0) { 
-                countValidCAs();                 
-            }             
-
-            if (stringBuilder.length() == 4) {
-                // delete last '-'
+            // maximum amount of records was found
+            if (remainingData.size() > EJBCA_MAX_RETURN_VALUE) {
+                
+                list = searchValidUsernameBy100(stringBuilder, list);
+                
                 stringBuilder.deleteCharAt(stringBuilder.length()-1);
+                
+                continue;
             }
             
+            // move data from remainingData to list
+            list.addAll(remainingData);
+            remainingData.clear();
+                       
+            // maximum number of UserDataVOWS objects the ejbca returns is 100
+            if (list.size() > EJBCA_MAX_RETURN_VALUE) {
+                
+                //copy and delete data after index 100
+                remainingData.addAll(list.subList(EJBCA_MAX_RETURN_VALUE, list.size()));
+                list.subList(EJBCA_MAX_RETURN_VALUE, list.size()).clear();
+                                
+                UserDataList = list;
+             
+                countValidCAs();   
+                
+                list = remainingData;
+            }             
+
             stringBuilder.deleteCharAt(stringBuilder.length()-1);   
-        }
-    }
+        }    
     
+        return list;    
+    } 
+     
     /**
-     * connect to EjbCA
+     * connects to EjbCA
      * 
      * @throws MalformedURLException - if no protocol is specified, or an unknown protocol is found, or spec is null 
      */
@@ -175,7 +163,7 @@ public class Connector {
     }
     
     /**
-     * load options.ini and return its values
+     * loads options.ini and return its values
      * 
      * @return Properties from ini file 'options.ini'
      * @throws IOException if an error occurred when reading from the input stream
@@ -186,26 +174,28 @@ public class Connector {
         Properties properties = new Properties();
         properties.load(new FileInputStream(INI_FILE));
         
+        ExcludeOrgs.addAll(Arrays.asList(properties.getProperty("ExcludeOrgs").split(",")));
+        ExcludeUsers.addAll(Arrays.asList(properties.getProperty("ExcludeUsers").split(",")));
+                
         return properties;
     }
-
+    
     /**
-     * set up UserDataList by given matchvalue
+     * sets up UserDataList by match from ini file
      * 
-     * @param matchValue - The matchvalue to set for finding users
      * @return size of created UserDataList
      * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception - an error caused by ejbca
      * @throws IllegalQueryException_Exception - if a given query was not legal 
      */
-    private int initUserData(String matchValue) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
+    private int initUserData() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
         
         // create user match from properties to find users
         UserMatch um = new UserMatch();
 
-        um.setMatchtype(MATCH_TYPE_BEGINSWITH);
-        um.setMatchwith(MATCH_WITH_USERNAME);
-        um.setMatchvalue(matchValue);//p.getProperty("Matchvalue"));
+        um.setMatchtype(Integer.parseInt(p.getProperty("Matchtype")));
+        um.setMatchwith(Integer.parseInt(p.getProperty("Matchwith")));
+        um.setMatchvalue(p.getProperty("Matchvalue"));
 
         // init user data list
         UserDataList = ejbcaws.findUser(um);      
@@ -213,6 +203,15 @@ public class Connector {
         return UserDataList.size();
     }
     
+    /**
+     * returns user data by given matchvalue
+     * 
+     * @param matchValue - The matchvalue to set for finding users
+     * @return size of created UserDataList
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     */
     private List<UserDataVOWS> getUserData(String matchValue) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
         
         // create user match from properties to find users
@@ -220,16 +219,14 @@ public class Connector {
 
         um.setMatchtype(MATCH_TYPE_BEGINSWITH);
         um.setMatchwith(MATCH_WITH_USERNAME);
-        um.setMatchvalue(matchValue);//p.getProperty("Matchvalue"));
+        um.setMatchvalue(matchValue);
 
         // init user data list
-        List<UserDataVOWS> list = ejbcaws.findUser(um);      
-        
-        return list;
+        return ejbcaws.findUser(um);     
     }
     
     /**
-     * count number of valid CA and organization name at given date
+     * counts number of valid CA and organization name at given date
      * 
      * @throws CertificateException - This exception indicates one of a variety of certificate problems
      * @throws ParseException - if the beginning of the specified string cannot be parsed.
@@ -247,20 +244,30 @@ public class Connector {
         for (UserDataVOWS data : UserDataList) {                     
         //for (int i = 0; i < 5; i++) {   UserDataVOWS data = UserDataList.get(i); // for DEBUG
             
-            String username = data.getUsername();
+            String username = data.getUsername();                
+            
+            // do not use CA from excluded username
+            if (ExcludeUsers.contains(username)) {                    
+                break;
+            }
             
             List<Certificate> certifList = ejbcaws.findCerts(username, false);
 
             for (Certificate encodedCA : certifList) {  
-
-                CA = decodeCertificate(encodedCA.getCertificateData());
                 
+                CA = decodeCertificate(encodedCA.getCertificateData());             
+          
                 organization = getOrganizationName(CA);
+                
+                // do not use CA from excluded organization
+                if (ExcludeOrgs.contains(organization)) {                    
+                    break;
+                }
                 
                 // if CA contains organization and is valid, increment in map
                 if (organization != null && isCaValidAtDay(CA, format.parse(p.getProperty("CAvalidAtDate")))) { 
                     int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
-                    validCAs.put(organization, count + 1);                
+                    validCAs.put(organization, count + 1);                     
                 }
             }
         }
@@ -304,10 +311,10 @@ public class Connector {
      * @return true if certificate is valid at given date
      */
     private boolean isCaValidAtDay(X509Certificate cert, Date date) {
-        
+       
         return date.after(cert.getNotBefore()) && date.before(cert.getNotAfter());
     }
-    
+
     /**
      * prints number of valid CA at specific date for each organization
      */
@@ -357,4 +364,3 @@ public class Connector {
         System.out.println("username \t\t" + username);
     }
 }
-
