@@ -37,11 +37,12 @@ import org.ejbca.core.protocol.ws.*;
  */
 public class Connector {
    
-    private final String INI_FILE = "options_public.ini";    
+    private final String INI_FILE = "/etc/ejbca.ini";    
     
     private final int MATCH_TYPE_BEGINSWITH = 1;
     private final int MATCH_WITH_USERNAME = 0;    
     private final int EJBCA_MAX_RETURN_VALUE = 100;
+    private final int NOT_REVOKED = -1;
         
     private final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
    
@@ -54,9 +55,9 @@ public class Connector {
     private List<UserDataVOWS> UserDataList;
     private CertificateFactory certFactory;
     
-    public static void main(String[] args) {
-        Connector con = new Connector();
-        
+    public static void main(String[] args) {        
+        Connector con = new Connector();                
+          
         try {
             // init
             con.certFactory = CertificateFactory.getInstance("X.509");
@@ -68,10 +69,54 @@ public class Connector {
             con.searchValidUsername();
             
             con.printResults();
-            
-        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException ex) {
+           
+        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
-        } 
+        }
+    }
+    
+    /**
+     * 
+     * @return validCAs converted to JSON
+     */
+    public String getJSON() {
+        
+        // compute valid CAs
+        try {
+            // init
+            certFactory = CertificateFactory.getInstance("X.509");
+            
+            p = loadIniFile();
+            
+            connectEjbCA();
+            
+            searchValidUsername();
+                       
+        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
+            Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
+        }
+        
+        // create JSON alphabeticaly ordered
+        StringBuilder handmadeJSON = new StringBuilder();
+        handmadeJSON.append("{");
+        
+        for (Map.Entry<String, Integer> entry : validCAs.entrySet()) {
+            handmadeJSON.append("\"");
+            handmadeJSON.append(entry.getKey());
+            handmadeJSON.append("\":");
+            handmadeJSON.append(entry.getValue());
+            handmadeJSON.append(",");
+        }
+        
+        handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
+        handmadeJSON.append("}");
+        
+        return handmadeJSON.toString();
+    }
+    
+    
+    public String getDate() {
+        return p.getProperty("CAvalidAtDate");
     }
     
     /**
@@ -83,8 +128,9 @@ public class Connector {
      * @throws CertificateException - This exception indicates one of a variety of certificate problems   
      * @throws ParseException - if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception - if CA does not exists
      */
-    private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+    private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
         
         UserDataList = searchValidUsernameBy100(new StringBuilder(), new ArrayList<>());
         
@@ -102,8 +148,9 @@ public class Connector {
      * @throws CertificateException - This exception indicates one of a variety of certificate problems   
      * @throws ParseException - if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception - if CA does not exists
      */  
-    private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
+    private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
         
     for (char c : characters.toCharArray()) {            
             
@@ -233,8 +280,9 @@ public class Connector {
      * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception - an error caused by ejbca
      * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception - if CA does not exists
      */
-    private void countValidCAs() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException{
+    private void countValidCAs() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException, CADoesntExistsException_Exception{
                 
         // init variables               
         X509Certificate CA;
@@ -258,29 +306,29 @@ public class Connector {
                 CA = decodeCertificate(encodedCA.getCertificateData());             
           
                 organization = getOrganizationName(CA);
-                
+               
                 // do not use CA from excluded organization
                 if (ExcludeOrgs.contains(organization)) {                    
                     break;
                 }
-                
+                                
                 // if CA contains organization and is valid, increment in map
                 if (organization != null && isCaValidAtDay(CA, format.parse(p.getProperty("CAvalidAtDate")))) { 
                     int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
                     validCAs.put(organization, count + 1);                     
-                }
+                }                
             }
         }
     }
- 
+
     /**
      * @param cert - certificate to parse
      * @return organization name parsed from DN if exists, else null
      * @throws InvalidNameException - if a syntax violation is detected. 
      */
     private String getOrganizationName(X509Certificate cert) throws InvalidNameException {
-        String dn = (String)cert.getSubjectDN().getName();
-                
+        String dn = (String)cert.getSubjectDN().getName();        
+        
         LdapName ldapDN = new LdapName(dn);                
         List<Rdn> listRdn = ldapDN.getRdns();
         
@@ -304,17 +352,23 @@ public class Connector {
         return (X509Certificate)certFactory.generateCertificate(new ByteArrayInputStream(source));
     }    
     
-    
     /**
      * @param cert - certificate with its validity
      * @param date - date to compare
-     * @return true if certificate is valid at given date
+     * @return true if certificate is valid at given date     *  
+     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception - an error caused by ejbca
+     * @throws CADoesntExistsException_Exception - if CA does not exists
      */
-    private boolean isCaValidAtDay(X509Certificate cert, Date date) {
-       
-        return date.after(cert.getNotBefore()) && date.before(cert.getNotAfter());
-    }
+    private boolean isCaValidAtDay(X509Certificate cert, Date date) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception {
+        
+        RevokeStatus status = ejbcaws.checkRevokationStatus(cert.getIssuerDN().toString(), cert.getSerialNumber().toString(16));
 
+        Date revocationDate = status.getRevocationDate().toGregorianCalendar().getTime();
+
+        return ((status.getReason() == NOT_REVOKED || date.before(revocationDate)) && date.after(cert.getNotBefore()) && date.before(cert.getNotAfter()));
+    }
+    
     /**
      * prints number of valid CA at specific date for each organization
      */
