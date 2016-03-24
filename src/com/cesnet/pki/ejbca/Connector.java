@@ -1,9 +1,11 @@
 package com.cesnet.pki.ejbca;
 
+import com.cesnet.pki.LdapConnector;
 import java.io.ByteArrayInputStream;
 import java.io.FileInputStream;
 import java.io.FileNotFoundException;
 import java.io.IOException;
+import java.io.PrintWriter;
 import java.math.BigInteger;
 import java.net.MalformedURLException;
 import java.net.URL;
@@ -15,11 +17,11 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Calendar;
 import java.util.Date;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Properties;
 import java.util.TreeMap;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -30,6 +32,7 @@ import javax.xml.bind.DatatypeConverter;
 import javax.xml.namespace.QName;
 import javax.xml.ws.Service;
 import org.ejbca.core.protocol.ws.*;
+import org.ini4j.Ini;
 
 /**
  * 
@@ -38,6 +41,7 @@ import org.ejbca.core.protocol.ws.*;
 public class Connector {
    
     private final String INI_FILE = "/etc/ejbca.ini";    
+    private final String ejbcaSection = "ejbca";    
     
     private final int MATCH_TYPE_BEGINSWITH = 1;
     private final int MATCH_WITH_USERNAME = 0;    
@@ -50,31 +54,52 @@ public class Connector {
     private final Map<String, Integer> validCAs = new TreeMap<>();
     private final HashSet<String> ExcludeOrgs = new HashSet<>();
     private final HashSet<String> ExcludeUsers = new HashSet<>();
+    private final HashSet<UserDataVOWS> UserDataList = new HashSet<>();
     private EjbcaWS ejbcaws;
-    private Properties p;    
-    private List<UserDataVOWS> UserDataList;
+    private Ini properties;    
     private CertificateFactory certFactory;
     
-    public static void main(String[] args) {        
-        Connector con = new Connector();                
-          
-        try {
+    private String incrementalDate;
+    
+    public static void main(String[] args) throws ParseException {        
+                
+        //LdapConnector adAuthenticator = new LdapConnector();         
+        //adAuthenticator.ldap();
+        
+        
+        Connector con = new Connector(); 
+        
+            try {
             // init
             con.certFactory = CertificateFactory.getInstance("X.509");
             
-            con.p = con.loadIniFile();
+            con.properties = con.loadIniFile();
             
             con.connectEjbCA();
             
-            con.searchValidUsername();
+            con.searchValidUsername();            
             
+            con.countValidCAs(); 
+        
             con.printResults();
-           
+        
         } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
-        }
+        }  
     }
     
+    /**
+     * 
+     * @throws ParseException 
+     */
+    private void incrementDate() throws ParseException {
+        
+        Calendar c = Calendar.getInstance();
+        c.setTime(format.parse(incrementalDate));
+        c.add(Calendar.MONTH, 1);  // number of days/months to add
+        incrementalDate = format.format(c.getTime());  // incrementalDate has a value of the new date
+    }
+
     /**
      * 
      * @return validCAs converted to JSON
@@ -86,11 +111,13 @@ public class Connector {
             // init
             certFactory = CertificateFactory.getInstance("X.509");
             
-            p = loadIniFile();
+            properties = loadIniFile();
             
             connectEjbCA();
             
             searchValidUsername();
+            
+            countValidCAs();
                        
         } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
@@ -116,11 +143,11 @@ public class Connector {
     
     
     public String getDate() {
-        return p.getProperty("CAvalidAtDate");
+        return properties.get(ejbcaSection, "CAvalidAtDate");
     }
     
     /**
-     * calls method for traversing all records
+     * calls method for traversing all records and save rest 
      * 
      * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception - an error caused by ejbca
@@ -132,15 +159,11 @@ public class Connector {
      */
     private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
         
-        UserDataList = searchValidUsernameBy100(new StringBuilder(), new ArrayList<>());
-        
-        // count valid CAs for remaining data (less than 100 records)
-        countValidCAs(); 
+        UserDataList.addAll(searchValidUsernameBy100(new StringBuilder(), new ArrayList<>()));        
     }
     
     /**
-     * iterates records by alphabet (ejbcaws.findUser returns max 100 records)
-     * after 100 records found, calls countValidCAs()
+     * iterates records by alphabet and save results to UserDataList (ejbcaws.findUser returns max 100 records)     *  
      * 
      * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception - an error caused by ejbca
@@ -166,29 +189,18 @@ public class Connector {
                 stringBuilder.deleteCharAt(stringBuilder.length()-1);
                 
                 continue;
+            } else if (!remainingData.isEmpty()) {
+            
+                // move data from remainingData to list
+                list.addAll(remainingData);
+                remainingData.clear();
+
+                UserDataList.addAll(list);
             }
             
-            // move data from remainingData to list
-            list.addAll(remainingData);
-            remainingData.clear();
-                       
-            // maximum number of UserDataVOWS objects the ejbca returns is 100
-            if (list.size() > EJBCA_MAX_RETURN_VALUE) {
-                
-                //copy and delete data after index 100
-                remainingData.addAll(list.subList(EJBCA_MAX_RETURN_VALUE, list.size()));
-                list.subList(EJBCA_MAX_RETURN_VALUE, list.size()).clear();
-                                
-                UserDataList = list;
-             
-                countValidCAs();   
-                
-                list = remainingData;
-            }             
-
             stringBuilder.deleteCharAt(stringBuilder.length()-1);   
-        }    
-    
+        }        
+        
         return list;    
     } 
      
@@ -199,32 +211,32 @@ public class Connector {
      */
     private void connectEjbCA() throws MalformedURLException  {
         
-        System.setProperty("javax.net.ssl.keyStore", p.getProperty("keyStore"));
-        System.setProperty("javax.net.ssl.keyStorePassword", p.getProperty("keyStorePassword"));
+        System.setProperty("javax.net.ssl.keyStore", properties.get(ejbcaSection, "keyStore"));
+        System.setProperty("javax.net.ssl.keyStorePassword", properties.get(ejbcaSection, "keyStorePassword"));
 
-        QName qname = new QName(p.getProperty("serviceURI"), p.getProperty("serviceLocalPart"));
-        URL url = new URL(p.getProperty("url"));
+        QName qname = new QName(properties.get(ejbcaSection, "serviceURI"), properties.get(ejbcaSection, "serviceLocalPart"));
+        URL url = new URL(properties.get(ejbcaSection, "url"));
         Service service = Service.create(url, qname);
 
-        ejbcaws = (EjbcaWS) service.getPort(new QName(p.getProperty("portURI"), p.getProperty("portLocalPart")), EjbcaWS.class);
+        ejbcaws = (EjbcaWS) service.getPort(new QName(properties.get(ejbcaSection, "portURI"), properties.get(ejbcaSection, "portLocalPart")), EjbcaWS.class);
     }
     
     /**
      * loads options.ini and return its values
      * 
-     * @return Properties from ini file 'options.ini'
+     * @return Ini from ini file 'options.ini'
      * @throws IOException if an error occurred when reading from the input stream
      * @throws FileNotFoundException - if the file does not exist, is a directory rather than a regular file, or for some other reason cannot be opened for reading
      */
-    private Properties loadIniFile() throws IOException, FileNotFoundException {
+    private Ini loadIniFile() throws IOException, FileNotFoundException {
         
-        Properties properties = new Properties();
-        properties.load(new FileInputStream(INI_FILE));
+        Ini ini = new Ini();
+        ini.load(new FileInputStream(INI_FILE));
         
-        ExcludeOrgs.addAll(Arrays.asList(properties.getProperty("ExcludeOrgs").split(",")));
-        ExcludeUsers.addAll(Arrays.asList(properties.getProperty("ExcludeUsers").split(",")));
+        ExcludeOrgs.addAll(Arrays.asList(ini.get(ejbcaSection,"ExcludeOrgs").split(",")));
+        ExcludeUsers.addAll(Arrays.asList(ini.get(ejbcaSection,"ExcludeUsers").split(",")));
                 
-        return properties;
+        return ini;
     }
     
     /**
@@ -240,12 +252,12 @@ public class Connector {
         // create user match from properties to find users
         UserMatch um = new UserMatch();
 
-        um.setMatchtype(Integer.parseInt(p.getProperty("Matchtype")));
-        um.setMatchwith(Integer.parseInt(p.getProperty("Matchwith")));
-        um.setMatchvalue(p.getProperty("Matchvalue"));
+        um.setMatchtype(Integer.parseInt(properties.get(ejbcaSection, "Matchtype")));
+        um.setMatchwith(Integer.parseInt(properties.get(ejbcaSection, "Matchwith")));
+        um.setMatchvalue(properties.get(ejbcaSection, "Matchvalue"));
 
         // init user data list
-        UserDataList = ejbcaws.findUser(um);      
+        //UserDataList = ejbcaws.findUser(um);      
         
         return UserDataList.size();
     }
@@ -287,11 +299,11 @@ public class Connector {
         // init variables               
         X509Certificate CA;
         String organization;       
-               
+
         // traverses all the current data and count valid CAs
         for (UserDataVOWS data : UserDataList) {                     
         //for (int i = 0; i < 5; i++) {   UserDataVOWS data = UserDataList.get(i); // for DEBUG
-            
+
             String username = data.getUsername();                
             
             // do not use CA from excluded username
@@ -313,7 +325,7 @@ public class Connector {
                 }
                                 
                 // if CA contains organization and is valid, increment in map
-                if (organization != null && isCaValidAtDay(CA, format.parse(p.getProperty("CAvalidAtDate")))) { 
+                if (organization != null && isCaValidAtDay(CA, format.parse(properties.get(ejbcaSection, "CAvalidAtDate")))) {
                     int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
                     validCAs.put(organization, count + 1);                     
                 }                
@@ -353,15 +365,17 @@ public class Connector {
     }    
     
     /**
+     * Checks if CA is valid at given date. It does check revocation status.
+     * 
      * @param cert - certificate with its validity
      * @param date - date to compare
-     * @return true if certificate is valid at given date     *  
+     * @return true if certificate is valid at given date
      * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception - an error caused by ejbca
      * @throws CADoesntExistsException_Exception - if CA does not exists
      */
     private boolean isCaValidAtDay(X509Certificate cert, Date date) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception {
-        
+  
         RevokeStatus status = ejbcaws.checkRevokationStatus(cert.getIssuerDN().toString(), cert.getSerialNumber().toString(16));
 
         Date revocationDate = status.getRevocationDate().toGregorianCalendar().getTime();
@@ -374,10 +388,24 @@ public class Connector {
      */
     private void printResults() {
         // print results
-        System.out.println("Number of valid CA at " + p.getProperty("CAvalidAtDate") + " is:");
+        System.out.println("Number of valid CA at " + properties.get(ejbcaSection, "CAvalidAtDate") + " is:");
         
         for (Map.Entry entry : validCAs.entrySet()) {
             System.out.println(entry.getValue() + "\t" + entry.getKey() );
+        }
+    }
+    
+    /**
+     * saves JSON to file with name 'evaluatedDate'.json
+     * @param json - results of searching
+     */
+    private void saveJsonResultsToFile(String json) {
+        
+        try(PrintWriter out = new PrintWriter(incrementalDate + ".json")){
+            out.println( json );
+            System.out.println("saved " + incrementalDate + ".json");
+        } catch (FileNotFoundException ex) {
+            Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
     
