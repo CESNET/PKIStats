@@ -1,11 +1,10 @@
 package com.cesnet.pki;
 
-import java.io.FileInputStream;
-import java.io.FileNotFoundException;
-import java.io.IOException;
+import com.cesnet.pki.ejbca.Connector;
 import java.net.MalformedURLException;
-import java.net.URL;
-import java.util.Arrays;
+import java.security.cert.CertificateException;
+import java.security.cert.X509Certificate;
+import java.text.ParseException;
 import java.util.Hashtable;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -13,61 +12,43 @@ import javax.naming.Context;
 import javax.naming.NamingEnumeration;
 import javax.naming.NamingException;
 import javax.naming.directory.Attribute;
-import javax.naming.directory.Attributes;
 import javax.naming.directory.SearchControls;
 import javax.naming.directory.SearchResult;
 import javax.naming.ldap.InitialLdapContext;
 import javax.naming.ldap.LdapContext;
-import javax.xml.namespace.QName;
-import javax.xml.ws.Service;
-import org.ejbca.core.protocol.ws.EjbcaWS;
-import org.ini4j.Ini;
+import org.ejbca.core.protocol.ws.AuthorizationDeniedException_Exception;
+import org.ejbca.core.protocol.ws.CADoesntExistsException_Exception;
+import org.ejbca.core.protocol.ws.EjbcaException_Exception;
 
-public class LdapConnector {
-    
-    private final String INI_FILE = "/etc/ejbca.ini";    
-    private final String ldapSection = "ldap";    
-        
-    private Ini properties;   
-    private LdapContext ctx;
-    
-    String searchFilter = "(&(cn=Petr Rysavy) (telephoneNumber=606064946))";  
+public class LdapConnector extends Connector {
+
+    private final String ldapSection = "ldap";
+
+    LdapContext ctx;
     String searchFilterAllCAs = "(&(objectClass=tcs2Order)(entryStatus=issued))";
     String searchFilterAllServerCAs = "(&(objectClass=tcs2ServerOrder)(entryStatus=issued))";
     String searchFilterAllClientCAs = "(&(objectClass=tcs2ClientOrder)(entryStatus=issued))";
-    
+
     String searchBaseDN_CA = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
-    String searchBaseDN = "ou=Persons,o=TCS2,o=apps,dc=cesnet,dc=cz";
-    
-    String paramCertificate = "tcs2Certificate"; 
-    
+
+    String certificateAttribute = "tcs2Certificate";
+
     public void ldap() {
+        
         try {
             
-            loadIniFile();
-                        
             connect();
-                    
-            NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN, searchFilter, getSimpleSearchControls());
-           
-            ctx.close();
             
-            while (namingEnum.hasMore ()) {
-                SearchResult result = (SearchResult) namingEnum.next ();   
-                
-                Attributes attrs = result.getAttributes ();
-                
-                System.out.println(attrs);
-            }
+            countValidCAs();
             
-            namingEnum.close();
-        } catch (NamingException ex) {
-            Logger.getLogger(LdapConnector.class.getName()).log(Level.SEVERE, "je to tady...", ex);
-        } catch (IOException ex) {
+            printResults();
+            
+        }  catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | CADoesntExistsException_Exception | ParseException | MalformedURLException | NamingException ex) {
             Logger.getLogger(LdapConnector.class.getName()).log(Level.SEVERE, null, ex);
-        }     
+        }
     }
-        
+    
+    
     /**
      * @return simple search control
      */
@@ -79,36 +60,56 @@ public class LdapConnector {
         //searchControls.setReturningAttributes(attrIDs);
         return searchControls;
     }
-    
-     
+
     /**
+     * @throws NamingException - if a naming exception is encountered
      * @throws MalformedURLException - if no protocol is specified, or an unknown protocol is found, or spec is null 
      */
-    private void connect() throws NamingException  {
+    @Override
+    protected void connect() throws NamingException, MalformedURLException {
         
         Hashtable<String, String> env = new Hashtable<>();
-        env.put(Context.INITIAL_CONTEXT_FACTORY,"com.sun.jndi.ldap.LdapCtxFactory");
+        env.put(Context.INITIAL_CONTEXT_FACTORY, "com.sun.jndi.ldap.LdapCtxFactory");
         env.put(Context.PROVIDER_URL, properties.get(ldapSection, "providerUrl"));
         env.put(Context.SECURITY_AUTHENTICATION, "simple");
         env.put(Context.SECURITY_PRINCIPAL, properties.get(ldapSection, "principal"));
         env.put(Context.SECURITY_CREDENTIALS, properties.get(ldapSection, "credentials"));
-
-        ctx = new InitialLdapContext(env, null);             
+        env.put("java.naming.ldap.attributes.binary", certificateAttribute);
         
+        ctx = new InitialLdapContext(env, null);
     }
     
-    /**
-     * loads options.ini and return its values
-     * 
-     * @return Ini from ini file 'options.ini'
-     * @throws IOException if an error occurred when reading from the input stream
-     * @throws FileNotFoundException - if the file does not exist, is a directory rather than a regular file, or for some other reason cannot be opened for reading
-     */
-    private Ini loadIniFile() throws IOException, FileNotFoundException {
+    
+    @Override
+    protected void countValidCAs() throws NamingException, CertificateException, AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception, ParseException {
+        // init variables
+        X509Certificate CA;
+        String organization;
         
-        Ini ini = new Ini();
-        ini.load(new FileInputStream(INI_FILE));        
-                
-        return ini;
+        NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN_CA, searchFilterAllCAs, getSimpleSearchControls());
+
+        ctx.close();
+
+        while (namingEnum.hasMore ()) {
+            SearchResult result = (SearchResult) namingEnum.next ();
+
+            if (result.getAttributes().get(certificateAttribute)!=null) {
+                Attribute certificate = result.getAttributes().get(certificateAttribute);
+
+                Object cert = certificate.get();
+
+                CA = decodeCertificate((byte[]) cert);
+
+                organization = getOrganizationName(CA);
+
+                if (organization != null && isCaValidAtDay(CA, format.parse(properties.get("ejbca", "CAvalidAtDate")))) {
+                    int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
+                    validCAs.put(organization, count + 1);
+                }
+            }
+        }        
+        
+        namingEnum.close();
+
     }
 }
