@@ -1,22 +1,16 @@
 package com.cesnet.pki;
 
 import com.cesnet.pki.ejbca.Connector;
-import java.io.FileNotFoundException;
-import java.io.IOException;
-import java.io.PrintWriter;
 import java.net.MalformedURLException;
 import java.net.URL;
 import java.nio.charset.Charset;
 import java.security.cert.CertificateException;
-import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.Arrays;
-import java.util.Calendar;
 import java.util.HashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 import javax.naming.InvalidNameException;
@@ -50,94 +44,36 @@ public class EjbcaConnector extends Connector {
     private final HashSet<String> ExcludeUsers = new HashSet<>();
     private final HashSet<UserDataVOWS> UserDataList = new HashSet<>();
     private EjbcaWS ejbcaws;
-    
-    private String incrementalDate;
- 
-    public void ejbca() {
+     
+    @Override
+    public void generateValidCAs() {
+        super.generateValidCAs();
 
         try {
             // init                        
             ExcludeOrgs.addAll(Arrays.asList(properties.get(ejbcaSection,"ExcludeOrgs").split(",")));
             ExcludeUsers.addAll(Arrays.asList(properties.get(ejbcaSection,"ExcludeUsers").split(",")));
-            
-            connect();
-            
+                                   
             searchValidUsername();
             
             countValidCAs(); 
             
-            printResults();
-        
-        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
-            Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
-        }
-    }
-    
-    /**
-     * 
-     * @throws ParseException 
-     */
-    private void incrementDate() throws ParseException {
-
-        Calendar c = Calendar.getInstance();
-        c.setTime(format.parse(incrementalDate));
-        c.add(Calendar.MONTH, 1); // number of days/months to add
-        incrementalDate = format.format(c.getTime()); // incrementalDate has a value of the new date
-    }
-
-    /**
-     * 
-     * @return validCAs converted to JSON
-     */
-    public String getJSON() {
-
-        // compute valid CAs
-        try {
-            // init
             
-            connect();
-
-            searchValidUsername();
-
-            countValidCAs();
-
-        } catch (CertificateException | IOException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
+        } catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
-
-        // create JSON alphabeticaly ordered
-        StringBuilder handmadeJSON = new StringBuilder();
-        handmadeJSON.append("{");
-
-        for (Map.Entry<String, Integer> entry : validCAs.entrySet()) {
-            handmadeJSON.append("\"");
-            handmadeJSON.append(entry.getKey());
-            handmadeJSON.append("\":");
-            handmadeJSON.append(entry.getValue());
-            handmadeJSON.append(",");
-        }
-
-        handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
-        handmadeJSON.append("}");
-
-        return handmadeJSON.toString();
-    }
-    
-    
-    public String getDate() {
-        return properties.get(ejbcaSection, "CAvalidAtDate");
     }
 
     /**
      * calls method for traversing all records and save rest 
      * 
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws IllegalQueryException_Exception - if a given query was not legal 
-     * @throws CertificateException - This exception indicates one of a variety of certificate problems   
-     * @throws ParseException - if the beginning of the specified string cannot be parsed.
-     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception - if CA does not exists
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws IllegalQueryException_Exception if a given query was not legal 
+     * @throws CertificateException This exception indicates one of a variety of certificate problems   
+     * @throws ParseException if the beginning of the specified string cannot be parsed.
+     * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception if CA does not exists
      */
     private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
 
@@ -147,13 +83,13 @@ public class EjbcaConnector extends Connector {
     /**
      * iterates records by alphabet and save results to UserDataList (ejbcaws.findUser returns max 100 records)
      * 
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws IllegalQueryException_Exception - if a given query was not legal 
-     * @throws CertificateException - This exception indicates one of a variety of certificate problems
-     * @throws ParseException - if the beginning of the specified string cannot be parsed.
-     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception - if CA does not exists
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws IllegalQueryException_Exception if a given query was not legal 
+     * @throws CertificateException This exception indicates one of a variety of certificate problems
+     * @throws ParseException if the beginning of the specified string cannot be parsed.
+     * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception if CA does not exists
      */  
     private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
         
@@ -189,7 +125,7 @@ public class EjbcaConnector extends Connector {
     /**
      * connects to EjbCA
      * 
-     * @throws MalformedURLException - if no protocol is specified, or an unknown protocol is found, or spec is null 
+     * @throws MalformedURLException if no protocol is specified, or an unknown protocol is found, or spec is null 
      */
     @Override
     protected void connect() throws MalformedURLException {
@@ -208,9 +144,9 @@ public class EjbcaConnector extends Connector {
      * sets up UserDataList by match from ini file
      * 
      * @return size of created UserDataList
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws IllegalQueryException_Exception if a given query was not legal 
      */
     private int initUserData() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
 
@@ -230,11 +166,11 @@ public class EjbcaConnector extends Connector {
     /**
      * returns user data by given matchvalue
      * 
-     * @param matchValue - The matchvalue to set for finding users
+     * @param matchValue The matchvalue to set for finding users
      * @return size of created UserDataList
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws IllegalQueryException_Exception - if a given query was not legal 
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws IllegalQueryException_Exception if a given query was not legal 
      */
     private List<UserDataVOWS> getUserData(String matchValue) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
 
@@ -252,12 +188,12 @@ public class EjbcaConnector extends Connector {
     /**
      * counts number of valid CA and organization name at given date
      * 
-     * @throws CertificateException - This exception indicates one of a variety of certificate problems
-     * @throws ParseException - if the beginning of the specified string cannot be parsed.
-     * @throws AuthorizationDeniedException_Exception - an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception - an error caused by ejbca
-     * @throws InvalidNameException - This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception - if CA does not exists
+     * @throws CertificateException This exception indicates one of a variety of certificate problems
+     * @throws ParseException if the beginning of the specified string cannot be parsed.
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
+     * @throws CADoesntExistsException_Exception if CA does not exists
      */
     @Override
     protected void countValidCAs() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException, CADoesntExistsException_Exception {
@@ -299,21 +235,6 @@ public class EjbcaConnector extends Connector {
                     validCAs.put(organization, count + 1);
                 }
             }
-        }
-    }
-
-
-    /**
-     * saves JSON to file with name 'evaluatedDate'.json
-     * @param json - results of searching
-     */
-    private void saveJsonResultsToFile(String json) {
-        
-        try(PrintWriter out = new PrintWriter(incrementalDate + ".json")){
-            out.println( json );
-            System.out.println("saved " + incrementalDate + ".json");
-        } catch (FileNotFoundException ex) {
-            Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 }

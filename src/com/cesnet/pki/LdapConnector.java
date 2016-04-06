@@ -5,6 +5,7 @@ import java.net.MalformedURLException;
 import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
+import java.util.HashMap;
 import java.util.Hashtable;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -23,27 +24,26 @@ import org.ejbca.core.protocol.ws.EjbcaException_Exception;
 public class LdapConnector extends Connector {
 
     private final String ldapSection = "ldap";
-
-    LdapContext ctx;
-    String searchFilterAllCAs = "(&(objectClass=tcs2Order)(entryStatus=issued))";
-    String searchFilterAllServerCAs = "(&(objectClass=tcs2ServerOrder)(entryStatus=issued))";
-    String searchFilterAllClientCAs = "(&(objectClass=tcs2ClientOrder)(entryStatus=issued))";
-
-    String searchBaseDN_CA = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
-
-    String certificateAttribute = "tcs2Certificate";
-
-    public void ldap() {
         
-        try {
-            
-            connect();
-            
+    private LdapContext ctx;
+    private final String searchFilterAllCAs = "(&(objectClass=tcs2Order)(entryStatus=issued))";
+    private final String searchFilterAllServerCAs = "(&(objectClass=tcs2ServerOrder)(entryStatus=issued))";
+    private final String searchFilterAllClientCAs = "(&(objectClass=tcs2ClientOrder)(entryStatus=issued))";
+    private final String searchFilter_ApiKey = "(tcs2ApiKey>=0)";
+
+    private final String searchBaseDN_CA_digicert = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
+    private final String searchBaseDN_ApiKey = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
+    
+    private final String certificateAttribute = "tcs2Certificate";
+
+    @Override
+    public void generateValidCAs() {
+        super.generateValidCAs();
+        
+        try {   
             countValidCAs();
-            
-            printResults();
-            
-        }  catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | CADoesntExistsException_Exception | ParseException | MalformedURLException | NamingException ex) {
+                        
+        }  catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | CADoesntExistsException_Exception | ParseException | NamingException ex) {
             Logger.getLogger(LdapConnector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -62,8 +62,8 @@ public class LdapConnector extends Connector {
     }
 
     /**
-     * @throws NamingException - if a naming exception is encountered
-     * @throws MalformedURLException - if no protocol is specified, or an unknown protocol is found, or spec is null 
+     * @throws NamingException if a naming exception is encountered
+     * @throws MalformedURLException if no protocol is specified, or an unknown protocol is found, or spec is null 
      */
     @Override
     protected void connect() throws NamingException, MalformedURLException {
@@ -79,14 +79,56 @@ public class LdapConnector extends Connector {
         ctx = new InitialLdapContext(env, null);
     }
     
+    /** 
+     * @return Map of organization's id and api key
+     * @throws NamingException if a naming exception is encountered
+     * @throws MalformedURLException if no protocol is specified, or an unknown protocol is found, or spec is null
+     */
+    protected HashMap<Integer, String> findApiKeysForDigicert() throws NamingException, MalformedURLException {
+        
+        // connect to ldap
+        connect();
+        
+        // create api key map
+        HashMap<Integer, String> apiKeyMap = new HashMap<>();
+        NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN_ApiKey, searchFilter_ApiKey, getSimpleSearchControls());
+        ctx.close();
+
+        while (namingEnum.hasMore ()) {
+            SearchResult result = (SearchResult) namingEnum.next ();
+
+            if (result.getAttributes().get("tcs2ApiKey")!=null && result.getAttributes().get("tcs2ExtID")!=null) {
+                
+                Object apiKey = result.getAttributes().get("tcs2ApiKey").get();
+                Object externId = result.getAttributes().get("tcs2ExtID").get();
+                
+                int organizationId = Integer.parseInt((String)externId);
+                
+                apiKeyMap.put(organizationId, (String)apiKey);
+            }
+        }        
+        namingEnum.close();
+        
+        return apiKeyMap;
+    }
     
+    /**
+     * counts number of valid CA and organization name at given date from ini file
+     * 
+     * @throws NamingException if a naming exception is encountered
+     * @throws CertificateException This exception indicates one of a variety of certificate problems
+     * @throws ParseException if the beginning of the specified string cannot be parsed.
+     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
+     * @throws EjbcaException_Exception an error caused by ejbca
+     * @throws CADoesntExistsException_Exception if CA does not exists
+     */
     @Override
-    protected void countValidCAs() throws NamingException, CertificateException, AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception, ParseException {
+    protected void countValidCAs() throws CertificateException, AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception, ParseException, NamingException {
         // init variables
         X509Certificate CA;
         String organization;
         
-        NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN_CA, searchFilterAllCAs, getSimpleSearchControls());
+        NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN_CA_digicert, searchFilterAllCAs, getSimpleSearchControls());
 
         ctx.close();
 
@@ -101,7 +143,7 @@ public class LdapConnector extends Connector {
                 CA = decodeCertificate((byte[]) cert);
 
                 organization = getOrganizationName(CA);
-
+                
                 if (organization != null && isCaValidAtDay(CA, format.parse(properties.get("ejbca", "CAvalidAtDate")))) {
                     int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
                     validCAs.put(organization, count + 1);
@@ -110,6 +152,5 @@ public class LdapConnector extends Connector {
         }        
         
         namingEnum.close();
-
     }
 }

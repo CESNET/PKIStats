@@ -2,33 +2,49 @@
     Created on : 16.3.2016, 14:12:35
     Author     : jana
 */
-#slider {
-    width: 50%;  
+#sliderEjbca {
+    width: 75%;  
     margin-top: 20px;
 }
-#slider_div {
+#sliderLdap {
+    width: 75%;  
+    margin-top: 20px;
+}
+#css-table .collumn { 
+    display: table-cell; 
+    float:left;
+    width: 48%; 
+    padding: 10px;
+    
+}
+#css-table .collumn:nth-child(even) { 
+    background: #ccc;
+}
+#css-table .collumn:nth-child(odd) { 
+    background: #eee;
+}
+
+.sliderDiv {
     width: 50%; 
     padding: 20px;
     margin: auto;
-    background-color: #E4E4E4;
 }
-#select_div {
+.selectDiv {
     display: flex;
     margin: auto;
-margin: 15px;
+    margin: 15px;
 }
-#arrows {
+.arrows {
     float:left;
     margin:10px;
 }
-
-.labelSelectBox {  
-    width: 50%;    
+.labelSelectBox {
+    width: 50%;
     float: left;
 }
-.center {   
+.center {
     padding:5px;
-    margin: auto;   
+    margin: auto;
     width: 50%;
-    background-color: #E4E4E4;
+    background-color: white;
 }
