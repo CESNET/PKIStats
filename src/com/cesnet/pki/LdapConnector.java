@@ -32,7 +32,7 @@ public class LdapConnector extends Connector {
     private final String searchFilter_ApiKey = "(tcs2ApiKey>=0)";
 
     private final String searchBaseDN_CA_digicert = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
-    private final String searchBaseDN_ApiKey = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
+    private final String searchBaseDN_ApiKey      = "ou=Organizations,o=TCS2,o=apps,dc=cesnet,dc=cz";
     
     private final String certificateAttribute = "tcs2Certificate";
 

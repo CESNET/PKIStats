@@ -1,6 +1,5 @@
 package com.cesnet.pki.ejbca;
 
-import com.cesnet.pki.DigicertConnector_backup;
 import com.cesnet.pki.DigicertConnector;
 import com.cesnet.pki.EjbcaConnector;
 import com.cesnet.pki.LdapConnector;
@@ -41,11 +40,21 @@ public class Connector {
     protected Map<String, Integer> validCAs = new TreeMap<>();
     protected Ini properties;;
     protected CertificateFactory certFactory;
-     
+    
+    public static final String ANSI_RESET = "\u001B[0m";
+    public static final String ANSI_BLACK = "\u001B[30m";
+    public static final String ANSI_RED = "\u001B[31m";
+    public static final String ANSI_GREEN = "\u001B[32m";
+    public static final String ANSI_YELLOW = "\u001B[33m";
+    public static final String ANSI_BLUE = "\u001B[34m";
+    public static final String ANSI_PURPLE = "\u001B[35m";
+    public static final String ANSI_CYAN = "\u001B[36m";
+    public static final String ANSI_WHITE = "\u001B[37m";
+    
     public static void main(String[] args) {
         
         Connector c = new Connector();
-                
+        /*        
         System.out.println("EJBCA:");
         EjbcaConnector ejbcaCon = new EjbcaConnector();
         ejbcaCon.generateValidCAs();
@@ -59,11 +68,10 @@ public class Connector {
         c.printResults(ldapCon.validCAs);
        
         System.out.println("=======================");
-              
+          */    
         System.out.println("DIGICERT:");
         DigicertConnector digicertCon = new DigicertConnector();
         digicertCon.generateValidCAs();
-        
     }    
 
     public Connector() {
@@ -101,12 +109,12 @@ public class Connector {
             case "ejbca":
                 EjbcaConnector ejbcaCon = new EjbcaConnector();
                 ejbcaCon.generateValidCAs();
-                validCAs = ejbcaCon.validCAs;
+                completeMap = ejbcaCon.validCAs;
                 break;
             case "ldap":
                 LdapConnector ldapCon = new LdapConnector();
                 ldapCon.generateValidCAs();
-                validCAs = ldapCon.validCAs;
+                completeMap = ldapCon.validCAs;
                 break;           
             default:
                 System.out.println("wrong input, you can write only ejbca or ldap");
@@ -170,12 +178,12 @@ public class Connector {
      */
     protected String getOrganizationName(X509Certificate cert) throws InvalidNameException {
         String dn = (String)cert.getSubjectDN().getName();
-
-        LdapName ldapDN = new LdapName(dn);
+        
+        LdapName ldapDN = new LdapName(dn);        
         List<Rdn> listRdn = ldapDN.getRdns();
 
-        for (Rdn rdn : listRdn) {
-            if ("O".equals(rdn.getType())) {
+        for (Rdn rdn : listRdn) {                        
+            if ("O".equals(rdn.getType())) {                
                 return (String) rdn.getValue();
             }
         }
@@ -188,9 +196,7 @@ public class Connector {
      * @throws CertificateException This exception indicates one of a variety of certificate problems 
      */
     protected X509Certificate decodeCertificate(byte[] source) throws CertificateException {
-      
-        System.out.println(new String(source));
-        
+
         return (X509Certificate)certFactory.generateCertificate(new ByteArrayInputStream(source));
     }
 
@@ -200,12 +206,17 @@ public class Connector {
      * @param cert certificate with its validity
      * @param date date to compare
      * @return true if certificate is valid at given date
-     * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception an error caused by ejbca
-     * @throws CADoesntExistsException_Exception if CA does not exists
      */
-    protected boolean isCaValidAtDay(X509Certificate cert, Date date) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, CADoesntExistsException_Exception {
+    protected boolean isCaValidAtDay(X509Certificate cert, Date date) {
 
+       /* if (date.after(cert.getNotBefore()) && date.before(cert.getNotAfter())) {
+            System.out.print(ANSI_GREEN);
+        } else {
+            System.out.print(ANSI_RED);
+        }
+        
+        System.out.println(cert.getNotBefore() + "\t" + cert.getNotAfter() + ANSI_RESET);        
+        */
         return (date.after(cert.getNotBefore()) && date.before(cert.getNotAfter()));
     }
 
@@ -228,11 +239,11 @@ public class Connector {
      * @return increment date in format yyyy-MM-dd
      * @throws ParseException if the beginning of the specified string cannot be parsed.
      */
-    private String incrementDate(String incrementalDate) throws ParseException  {
+    protected String incrementDate(String incrementalDate) throws ParseException  {
 
         Calendar c = Calendar.getInstance();
         c.setTime(format.parse(incrementalDate));
         c.add(Calendar.MONTH, 1); // number of days/months to add
         return incrementalDate = format.format(c.getTime()); // incrementalDate has a value of the new date
-    }
+    }   
 }

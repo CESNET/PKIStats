@@ -10,10 +10,14 @@
     width: 75%;  
     margin-top: 20px;
 }
+#sliderDigicert {
+    width: 75%;  
+    margin-top: 20px;
+}
 #css-table .collumn { 
     display: table-cell; 
     float:left;
-    width: 48%; 
+    width: 32%; 
     padding: 10px;
     
 }

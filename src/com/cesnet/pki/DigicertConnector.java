@@ -8,9 +8,7 @@ package com.cesnet.pki;
 import com.cesnet.pki.ejbca.Connector;
 import java.io.BufferedReader;
 import java.io.IOException;
-import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.Reader;
 import java.io.UnsupportedEncodingException;
 import java.net.HttpURLConnection;
 import java.net.MalformedURLException;
@@ -19,16 +17,19 @@ import java.net.URL;
 import java.net.UnknownServiceException;
 import java.nio.charset.Charset;
 import java.security.cert.CertificateException;
-import java.sql.Date;
+import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.Map;
+import java.util.Scanner;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import javax.naming.InvalidNameException;
 import javax.naming.NamingException;
 import javax.xml.bind.DatatypeConverter;
 import org.bouncycastle.cert.X509CertificateHolder;
+import org.bouncycastle.cert.jcajce.JcaX509CertificateConverter;
 import org.bouncycastle.cms.CMSException;
 import org.bouncycastle.cms.CMSSignedData;
 import org.bouncycastle.util.Store;
@@ -45,37 +46,50 @@ public class DigicertConnector extends Connector {
     private final String digicertSection = "digicert";    
     
     private HashMap<Integer, String> organizationId_has_ApiKey;
-    private HashMap<Integer, String> organizationId_has_name = new HashMap<>();    
-    private HashMap<Integer, Integer> organization_has_numOfCAs = new HashMap<>();
-    
+    private HashMap<Integer, String> organizationId_has_name = new HashMap<>(); 
+    private HashMap<Integer, Integer> organizationId_has_numOfCAs = new HashMap<>();
     private final int LIMIT = 1000;
     private final String key = properties.get(digicertSection,"apiKey");
         
     private final String urlBase = "https://www.digicert.com/services/v2/";
     
-    private final String urlListChildContainers = "container/"+ properties.get(digicertSection,"rootId") +"/children";
-     
-    private String date = properties.get("ejbca","CAvalidAtDate");
+    protected String date = "2016-30-03";//properties.get("ejbca","CAvalidAtDate");
     
     @Override  
     public void generateValidCAs() {
-        super.generateValidCAs();
+        super.generateValidCAs();        
         
         try {
             
             LdapConnector lc = new LdapConnector();
             organizationId_has_ApiKey = lc.findApiKeysForDigicert();
             
-            getOrderId(0);
+            int offset = 0;            
+            getOrderId(offset);
+            
+            System.out.println(date);   
             
             printNumberOfCAs();
             
-        } catch (MalformedURLException | CMSException | ParseException ex) {
-            Logger.getLogger(DigicertConnector.class.getName()).log(Level.SEVERE, null, ex);
-        } catch (JSONException | IOException | NamingException ex) {
+            /////////////////
+            // create JSON //
+            /////////////////
+            StringBuilder handmadeJSON = new StringBuilder();
+            handmadeJSON.append("{");
+
+            for (Map.Entry<Integer, Integer> entry : organizationId_has_numOfCAs.entrySet()) {         
+                handmadeJSON.append("\"").append(organizationId_has_name.get(entry.getKey())).append("\":").append(entry.getValue()).append(",");
+            }            
+            
+            handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
+            handmadeJSON.append("}");
+
+            String json = handmadeJSON.toString();
+
+        } catch ( CMSException | ParseException | IllegalArgumentException | CertificateException | JSONException | IOException | NamingException ex) {
             Logger.getLogger(DigicertConnector.class.getName()).log(Level.SEVERE, null, ex);
         }
-        
+       
     }    
 
     private JSONObject callDigicert(String urlSuffix, int offset) throws MalformedURLException, IOException, JSONException {
@@ -128,7 +142,7 @@ public class DigicertConnector extends Connector {
             builder.append(currentLine);
         }
 
-        builder.delete(builder.length()-19, builder.length()); // neather -----END PKCS7-----
+        builder.delete(builder.length()-("-----END PKCS7-----".length()), builder.length()); // neather -----END PKCS7-----
         
         return builder.toString();
     }
@@ -138,63 +152,38 @@ public class DigicertConnector extends Connector {
      * @throws IOException if an I/O error occurs while creating the input stream
      * @throws JSONException if the key is not found or if the value is not a JSONArray.
      */
-    private void getOrderId(int offset) throws JSONException, IOException, CMSException, ParseException {
+    private void getOrderId(int offset) throws JSONException, IOException, CMSException, ParseException, MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, UnknownServiceException, CertificateException {
         
         JSONObject orders = callDigicert("order/certificate", offset);
         
         JSONArray jsonArray = orders.getJSONArray("orders");
         JSONObject pageInfo = (JSONObject)orders.get("page");
 
+        System.out.println(pageInfo);
+        
         for(int i=0; i<jsonArray.length(); i++) {
             JSONObject order = (JSONObject) jsonArray.get(i);
             
             String status = order.getString("status");
-
-            if(status.equals("issued")) {
-                            
+            
+            if(!status.equals("rejected") && !status.equals("needs_approval") && !status.equals("pending")) {
+            
                 JSONObject certificate = (JSONObject)order.get("certificate");
                 int certificateId = certificate.getInt("id");
                 
                 JSONObject container = (JSONObject)order.get("container");
                 int parentId = container.getInt("id");
                 
+                JSONObject organization = (JSONObject)order.get("organization");
+                
                 if (organizationId_has_name.get(parentId)==null) {
-                    organizationId_has_name.put(parentId, container.getString("name"));
+                    organizationId_has_name.put(parentId, organization.getString("name"));
                 }
                 
                 if (organizationId_has_ApiKey.get(parentId)!=null) { // because of Univerzita Jana Evangelisty Purkyne
                 
                     decodeCA(certificateId, parentId, organizationId_has_ApiKey.get(parentId));
                 }
-                
-/*
-//              CODE WITHOUT ACCESSING CERTIFICATE
-                
-                JSONObject container = (JSONObject)order.get("container");
-                int parentId = container.getInt("id");
-
-                JSONObject certificate = (JSONObject)order.get("certificate");
-                String validTill = certificate.getString("valid_till");
-                String dateCreated = order.getString("date_created").substring(0,10);
-
-                int certificateId = certificate.getInt("id");
-                
-                if (organizationId_has_name.get(parentId)==null) {
-                    organizationId_has_name.put(parentId, container.getString("name"));
-                }
-                
-                
-                if (format.parse(validTill).after(format.parse(date)) && format.parse(dateCreated).before(format.parse(date))) {
-                    
-                    count++;
-                    
-                    int value = 0;
-                    if (organization_has_numOfCAs.get(parentId) != null) {                
-                        value = organization_has_numOfCAs.get(parentId);                
-                    }
-                    organization_has_numOfCAs.put(parentId, value+1);                    
-                }
-*/                
             }
         }
         
@@ -210,7 +199,7 @@ public class DigicertConnector extends Connector {
      * prints results
      */
     private void printNumberOfCAs() {
-        for (Map.Entry<Integer, Integer> entry : organization_has_numOfCAs.entrySet()) {            
+        for (Map.Entry<Integer, Integer> entry : organizationId_has_numOfCAs.entrySet()) {    //original        
             
             System.out.println(entry.getValue() + "\t" + organizationId_has_name.get(entry.getKey()));
         }
@@ -230,28 +219,27 @@ public class DigicertConnector extends Connector {
      * @throws ParseException if the beginning of the specified string cannot be parsed
      * @throws CMSException
      */
-    private void decodeCA(int certificateId, int parentId, String apiKey) throws MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, IOException, UnknownServiceException, CMSException, ParseException {        
+    private void decodeCA(int certificateId, int parentId, String apiKey) throws MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, IOException, UnknownServiceException, CMSException, ParseException, CertificateException {        
         
         String certificate = callDigicert("certificate/" + certificateId + "/download/format/p7b", apiKey);
                       
         byte[] source = DatatypeConverter.parseBase64Binary(new String(certificate.getBytes(), Charset.forName("UTF-8")));
-                
-        CMSSignedData data = new CMSSignedData(source);
-                
-        Store store = data.getCertificates();
+        CMSSignedData signature = new CMSSignedData(source);
+        Store cs = signature.getCertificates();
         
-        ArrayList<X509CertificateHolder> listCertData = new ArrayList(store.getMatches(null));
+        ArrayList<X509CertificateHolder> listCertData = new ArrayList(cs.getMatches(null));
         
         for (X509CertificateHolder holder : listCertData) {
-                        
-            if (holder.isValidOn(format.parse(date))) {
-                
+               
+            X509Certificate CA = new JcaX509CertificateConverter().getCertificate(holder);
+
+            if (isCaValidAtDay(CA, format.parse(date))) {
                 int value = 0;
-                if (organization_has_numOfCAs.get(parentId) != null) {                
-                    value = organization_has_numOfCAs.get(parentId);                
+                if (organizationId_has_numOfCAs.get(parentId) != null) {
+                    value = organizationId_has_numOfCAs.get(parentId);
                 }
-                organization_has_numOfCAs.put(parentId, value+1);
-            }
+                organizationId_has_numOfCAs.put(parentId, value+1);
+             }            
         }
     }
     
