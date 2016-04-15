@@ -33,7 +33,7 @@ var tresholdDigicert = 1;
 var json = {
     'Ejbca': jsonEjbca,
     'Ldap': jsonLdap,
-    'Digicert': jsonDigicert      
+    'Digicert': jsonDigicert
 };
 var date = {
     'Ejbca': dateEjbca,
@@ -64,8 +64,37 @@ var treshold = {
 // Load the Visualization API and the corechart package.
 google.charts.load('current', {'packages':['corechart', 'table', 'bar']});
 
+function sortNumberss(a,b) {
+    return b-a;
+}
+
+function sortJsonByAlphabeth(json) {
+    var orderedByName = {};
+    Object.keys(json).sort().forEach(function(key) {
+        orderedByName[key] = json[key];
+    });
+
+    return orderedByName;
+}
+
+function sortJsonByNumbers(json) {
+    var swappedJSON = {};
+    Object.keys(json).sort(sortNumberss).forEach(function(key) {
+        swappedJSON[json[key]] = key;
+    });
+    var orderedByKey = {};
+    Object.keys(swappedJSON).sort(sortNumberss).forEach(function(key) {
+        orderedByKey[key] = swappedJSON[key];
+    });
+    var swappedJSONback = {};
+    Object.keys(orderedByKey).sort(sortNumberss).forEach(function(key) {
+        swappedJSONback[orderedByKey[key]] = key;
+    });
+
+    return swappedJSONback;
+}
+
 function drawChart(parameter) {
-        
     // init values
     var max = 0;
     count[parameter] = 0;
@@ -75,43 +104,48 @@ function drawChart(parameter) {
     data.addColumn('string', 'Organizations');
     data.addColumn('number', 'Count');  
 
-    console.log(json[parameter]);
-
     var parsedValidCAs = JSON.parse(json[parameter]);
-        
+
     // set to default
     if (redraw[parameter]===true) {
         $("#PairedSelectBox"+parameter).empty();
-        $("#MasterSelectBox"+parameter).empty();            
+        $("#MasterSelectBox"+parameter).empty();
         $selectBox = $('#MasterSelectBox'+parameter);
         exclusive[parameter] = [];
         treshold[parameter] = 1;
-    }  
-    
+    }
+
+    ////////////////////////////////////////////////////////////////
+    var radioChecked = $('input[name="Master'+parameter+'"]:checked').val();
+    if (radioChecked === 'Master'+parameter+'Abc') {
+        parsedValidCAs = sortJsonByAlphabeth(parsedValidCAs);
+    } else if (radioChecked === 'Master'+parameter+'Num') {
+        parsedValidCAs = sortJsonByNumbers(parsedValidCAs);
+    }
+
     for (var entry in parsedValidCAs) {
 
         if (parsedValidCAs[entry] >= treshold[parameter]) {
 
             // do not add excluded organisations
-            if (exclusive[parameter].indexOf(entry) !== -1) {        
-                continue;      
+            if (exclusive[parameter].indexOf(entry) !== -1) {
+                continue;
             }
-            
+
             // find the biggest number of CA
             if (parsedValidCAs[entry] > max) {
-                max = parsedValidCAs[entry];
+                max = parseInt(parsedValidCAs[entry]);
             }
 
             // add new options to select box only once
-            if (redraw[parameter]===true) {                 
-                console.log(parameter + " is redraw 2");
+            if (redraw[parameter]===true) {
                 $selectBox.append($('<option />', {
-                    value: parsedValidCAs[entry],
+                    value: parseInt(parsedValidCAs[entry]),
                     text: entry + " (" + parsedValidCAs[entry] + ")"
-                }));  
+                }));
             }
-            
-            data.addRow([entry, parsedValidCAs[entry]]);
+
+            data.addRow([entry, parseInt(parsedValidCAs[entry])]);
 
             count[parameter]++;
         }
@@ -172,9 +206,9 @@ function drawChart(parameter) {
             $("#sliderValue"+parameter).html(ui.value);
         }
     });
-    
+
     $("#sliderValue" + parameter).html($('#slider' + parameter).slider('value') );
-    
+
     // redraw is not need
     redraw[parameter] = false;
 }
@@ -196,38 +230,24 @@ function readFile(parameter, callback) {
     reader.onloadend = function(evt) {
         if (evt.target.readyState === FileReader.DONE) { // DONE == 2
             
-            json[parameter] = evt.target.result;            
+            json[parameter] = evt.target.result;
             callback();
         }
     };
     reader.readAsText(file);
 }
 
-function sortBothByName(parameter) {
-    $('#MasterSelectBox'+parameter).html($("#MasterSelectBox"+parameter+" option").sort(function (a,b) {
-        return a.text === b.text ? 0 : a.text < b.text ? -1 : 1;
-    }));
-    $('#PairedSelectBox'+parameter).html($("#PairedSelectBox"+parameter+" option").sort(function (a,b) {
-        return a.text === b.text ? 0 : a.text < b.text ? -1 : 1;
-    }));
-}
-function sortBothByValue(parameter) {
-    $('#MasterSelectBox'+parameter).html($("#MasterSelectBox"+parameter+" option").sort(function (a,b) {
-        return a.value === b.value ? (a.text === b.text ? 0 : a.text < b.text ? -1 : 1) : b.value - a.value ;
-    }));
-    $('#PairedSelectBox'+parameter).html($("#PairedSelectBox"+parameter+" option").sort(function (a,b) {
-        return a.value === b.value ? (a.text === b.text ? 0 : a.text < b.text ? -1 : 1) : b.value - a.value;
-    }));
-}
 function sortMasterByName(parameter) {
     $('#MasterSelectBox'+parameter).html($("#MasterSelectBox"+parameter+" option").sort(function (a,b) {
         return a.text === b.text ? 0 : a.text < b.text ? -1 : 1;
     }));
+    drawChart(parameter);
 }
 function sortMasterByValue(parameter) {
     $('#MasterSelectBox'+parameter).html($("#MasterSelectBox"+parameter+" option").sort(function (a,b) {
         return a.value === b.value ? (a.text === b.text ? 0 : a.text < b.text ? -1 : 1) : b.value - a.value ;
     }));
+    drawChart(parameter);
 }
 function sortPairedByName(parameter) {    
     $('#PairedSelectBox'+parameter).html($("#PairedSelectBox"+parameter+" option").sort(function (a,b) {
@@ -252,35 +272,35 @@ function sortSelectBox(sortType,parameter) {
     }
 }
 
-google.charts.setOnLoadCallback(function(){ drawChart("Digicert"); });
-google.charts.setOnLoadCallback(function(){ drawChart("Ejbca"); });
-google.charts.setOnLoadCallback(function(){ drawChart("Ldap"); }); 
+google.charts.setOnLoadCallback(function(){ drawChart('Ejbca'); });
+google.charts.setOnLoadCallback(function(){ drawChart('Ldap'); });
+google.charts.setOnLoadCallback(function(){ drawChart('Digicert'); });
 
 $(document).ready(function() {
-       
+
     // slider Ejbca
     $('#btnSliderEjbca').click(function() {
-        treshold['Ejbca'] = $('#sliderEjbca').slider('value');                
+        treshold['Ejbca'] = $('#sliderEjbca').slider('value');
         drawChart('Ejbca');
     });
     // slider Ldap
     $('#btnSliderLdap').click(function() {
-        treshold['Ldap'] = $('#sliderLdap').slider('value');                
+        treshold['Ldap'] = $('#sliderLdap').slider('value');
         drawChart('Ldap');
     });
     // slider Digicert
     $('#btnSliderDigicert').click(function() {
-        treshold['Digicert'] = $('#sliderDigicert').slider('value');                
+        treshold['Digicert'] = $('#sliderDigicert').slider('value');
         drawChart('Digicert');
     });
-    
+
 
     // select boxes add Ejbca
     $('#btnAddEjbca').click(function() { 
         // move option from master to paired select box
         $('#MasterSelectBoxEjbca > option:selected').each(function() {
             var string = $(this).text();
-            exclusive['Ejbca'].push(string.substring(0, string.lastIndexOf('(')-1));            
+            exclusive['Ejbca'].push(string.substring(0, string.lastIndexOf('(')-1));
         });
         $('#MasterSelectBoxEjbca > option:selected').appendTo('#PairedSelectBoxEjbca');
         // cruel sorting functions
@@ -294,7 +314,7 @@ $(document).ready(function() {
         // move option from master to paired select box
         $('#MasterSelectBoxLdap > option:selected').each(function() {
             var string = $(this).text();
-            exclusive['Ldap'].push(string.substring(0, string.lastIndexOf('(')-1));            
+            exclusive['Ldap'].push(string.substring(0, string.lastIndexOf('(')-1));
         });
         $('#MasterSelectBoxLdap > option:selected').appendTo('#PairedSelectBoxLdap');
         // cruel sorting functions
@@ -308,7 +328,7 @@ $(document).ready(function() {
         // move option from master to paired select box
         $('#MasterSelectBoxDigicert > option:selected').each(function() {
             var string = $(this).text();
-            exclusive['Digicert'].push(string.substring(0, string.lastIndexOf('(')-1));            
+            exclusive['Digicert'].push(string.substring(0, string.lastIndexOf('(')-1));
         });
         $('#MasterSelectBoxDigicert > option:selected').appendTo('#PairedSelectBoxDigicert');
         // cruel sorting functions
@@ -317,7 +337,7 @@ $(document).ready(function() {
         // redraw chart
         drawChart('Digicert');
     });
-    
+
 
     // select boxes remove Ejbca
     $('#btnRemoveEjbca').click(function() { 
@@ -326,7 +346,7 @@ $(document).ready(function() {
             var index = exclusive['Ejbca'].indexOf(string.substring(0, string.lastIndexOf('(')-1));
             if (index > -1) {
                 exclusive['Ejbca'].splice(index, 1);
-            }            
+            }
         });
         $('#PairedSelectBoxEjbca > option:selected').appendTo('#MasterSelectBoxEjbca');
         // cruel sorting functions2
@@ -338,7 +358,7 @@ $(document).ready(function() {
     // select boxes remove Ldap
     $('#btnRemoveLdap').click(function() { 
         $('#PairedSelectBoxLdap > option:selected').each(function() {
-            var string = $(this).text();            
+            var string = $(this).text();
             var index = exclusive['Ldap'].indexOf(string.substring(0, string.lastIndexOf('(')-1));
             if (index > -1) {
                 exclusive['Ldap'].splice(index, 1);
@@ -370,27 +390,27 @@ $(document).ready(function() {
 
 
     // read file Ejbca
-    $('#btnReadFileEjbca').click(function() {        
+    $('#btnReadFileEjbca').click(function() {
         readFile('Ejbca', function() {
             var str = document.getElementById('filesEjbca').value;
             // remove last '.json'
-            date['Ejbca'] = str.slice(0, -5);      
-            redraw['Ejbca'] = true;            
+            date['Ejbca'] = str.slice(0, -5);
+            redraw['Ejbca'] = true;
             drawChart('Ejbca');
         });
     });
     // read file Ldap
-    $('#btnReadFileLdap').click(function() {        
+    $('#btnReadFileLdap').click(function() {
         readFile('Ldap', function() {
             var str = document.getElementById('filesLdap').value;
             // remove last '.json'
-            date['Ldap'] = str.slice(0, -5);           
-            redraw['Ldap'] = true;            
+            date['Ldap'] = str.slice(0, -5);
+            redraw['Ldap'] = true;
             drawChart('Ldap');
         });
     });
     // read file Digicert
-    $('#btnReadFileDigicert').click(function() {        
+    $('#btnReadFileDigicert').click(function() {
         readFile('Digicert', function() {
             var str = document.getElementById('filesDigicert').value;
             // remove last '.json'

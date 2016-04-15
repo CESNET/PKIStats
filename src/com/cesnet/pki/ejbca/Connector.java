@@ -11,6 +11,7 @@ import java.io.PrintWriter;
 import java.security.cert.CertificateException;
 import java.security.cert.CertificateFactory;
 import java.security.cert.X509Certificate;
+import java.text.Normalizer;
 import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
@@ -23,9 +24,6 @@ import java.util.logging.Logger;
 import javax.naming.InvalidNameException;
 import javax.naming.ldap.LdapName;
 import javax.naming.ldap.Rdn;
-import org.ejbca.core.protocol.ws.AuthorizationDeniedException_Exception;
-import org.ejbca.core.protocol.ws.CADoesntExistsException_Exception;
-import org.ejbca.core.protocol.ws.EjbcaException_Exception;
 import org.ini4j.Ini;
 
 /**
@@ -33,14 +31,14 @@ import org.ini4j.Ini;
  * @author jana kejvalova
  */
 public class Connector {
-    
+
     private final String INI_FILE = "/etc/ejbca.ini";
-    
+
     protected final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
     protected Map<String, Integer> validCAs = new TreeMap<>();
     protected Ini properties;;
     protected CertificateFactory certFactory;
-    
+
     public static final String ANSI_RESET = "\u001B[0m";
     public static final String ANSI_BLACK = "\u001B[30m";
     public static final String ANSI_RED = "\u001B[31m";
@@ -50,29 +48,30 @@ public class Connector {
     public static final String ANSI_PURPLE = "\u001B[35m";
     public static final String ANSI_CYAN = "\u001B[36m";
     public static final String ANSI_WHITE = "\u001B[37m";
-    
+
     public static void main(String[] args) {
-        
+
         Connector c = new Connector();
-        /*        
-        System.out.println("EJBCA:");
+        /*      
+        System.out.println(ANSI_GREEN+"EJBCA:");
         EjbcaConnector ejbcaCon = new EjbcaConnector();
         ejbcaCon.generateValidCAs();
         c.printResults(ejbcaCon.validCAs);
         
         System.out.println("=======================");
-       
-        System.out.println("LDAP:");
+
+        System.out.println(ANSI_BLUE+"LDAP:");
         LdapConnector ldapCon = new LdapConnector();
         ldapCon.generateValidCAs();
         c.printResults(ldapCon.validCAs);
        
         System.out.println("=======================");
-          */    
-        System.out.println("DIGICERT:");
+             
+        System.out.println(ANSI_PURPLE+"DIGICERT:");
         DigicertConnector digicertCon = new DigicertConnector();
         digicertCon.generateValidCAs();
-    }    
+        */       
+    }
 
     public Connector() {
         try {
@@ -84,26 +83,28 @@ public class Connector {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
-        
+
     protected void generateValidCAs() {
-        try {            
+        try {
+            System.out.println(new java.util.Date());
             connect();
         } catch (Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
-    
-    protected void connect() throws Exception {}    
+
+    protected void connect() throws Exception {}
     protected void countValidCAs()  throws Exception {}
     
     /**
-     * @param select parameter which JSON do you want. Allowed input are "ejbca" or "ldap"
+     * @param select parameter which JSON do you want. Allowed input are "ejbca", "ldap" or "digicert"\n
+     *        all cases returns all valid CAs
      * @return validCAs converted to JSON
      */
     public String getJSON(String select) {
-        
+
         Map<String, Integer> completeMap = new TreeMap<>();
-                
+
         // init
         switch (select) {
             case "ejbca":
@@ -113,14 +114,46 @@ public class Connector {
                 break;
             case "ldap":
                 LdapConnector ldapCon = new LdapConnector();
-                ldapCon.generateValidCAs();
+                ldapCon.generateValidCAs("all");
                 completeMap = ldapCon.validCAs;
-                break;           
+                break;
+            case "digicert":
+                DigicertConnector digicertCon = new DigicertConnector();
+                digicertCon.generateValidCAs();
+                completeMap = digicertCon.validCAs;
+                break;
             default:
-                System.out.println("wrong input, you can write only ejbca or ldap");
+                System.out.println("wrong input, you can write only ejbca, ldap or digicert");
                 break;
         }
+
+        // create JSON alphabeticaly ordered
+        StringBuilder handmadeJSON = new StringBuilder();
+        handmadeJSON.append("{");
+
+        for (Map.Entry<String, Integer> entry : completeMap.entrySet()) {
+            handmadeJSON.append("\"").append(entry.getKey()).append("\":").append(entry.getValue()).append(",");
+        }
+
+        handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
+        handmadeJSON.append("}");
+
+        return handmadeJSON.toString();
+    }
+    /**
+     * returns JSON from ldap
+     * 
+     * @param select parameter which Ldap JSON do you want. Allowed input are "server", "client" or "all"
+     * @return validCAs converted to JSON
+     */
+    public String getLdapJSON(String select) {
+
+        Map<String, Integer> completeMap = new TreeMap<>();
         
+        LdapConnector ldapCon = new LdapConnector();
+        ldapCon.generateValidCAs(select);
+        completeMap = ldapCon.validCAs;            
+
         // create JSON alphabeticaly ordered
         StringBuilder handmadeJSON = new StringBuilder();
         handmadeJSON.append("{");
@@ -141,21 +174,21 @@ public class Connector {
      * @param fileName given file name
      */
     protected void saveJsonResultsToFile(String json, String fileName) {
-        
+
         try(PrintWriter out = new PrintWriter(fileName + ".json")){
             out.println( json );            
         } catch (FileNotFoundException ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
-    
+
     /** 
      * @return date from ini file
      */
     public String getDate() {
         return properties.get("ejbca", "CAvalidAtDate");
     }
-    
+
     /**
      * loads options.ini and return its values
      * 
@@ -170,7 +203,7 @@ public class Connector {
 
         return ini;
     }
-    
+
     /**
      * @param cert certificate to parse
      * @return organization name parsed from DN if exists, else null
@@ -178,18 +211,31 @@ public class Connector {
      */
     protected String getOrganizationName(X509Certificate cert) throws InvalidNameException {
         String dn = (String)cert.getSubjectDN().getName();
-        
-        LdapName ldapDN = new LdapName(dn);        
+
+        LdapName ldapDN = new LdapName(dn);
         List<Rdn> listRdn = ldapDN.getRdns();
 
-        for (Rdn rdn : listRdn) {                        
-            if ("O".equals(rdn.getType())) {                
-                return (String) rdn.getValue();
+        for (Rdn rdn : listRdn) {
+            if ("O".equals(rdn.getType())) {
+                String organizationName = (String) rdn.getValue();
+                return stripAccents(organizationName);
             }
         }
         return null;
     }
 
+    /**
+     * Removes diacritics (~= accents) from a string. The case will not be altered. For instance, 'à' will be replaced by 'a'.
+     * 
+     * @param s string to normalize
+     * @return string without accents
+     */
+    private String stripAccents(String s) {
+        s = Normalizer.normalize(s, Normalizer.Form.NFD);
+        s = s.replaceAll("[\\p{InCombiningDiacriticalMarks}]", "");
+        return s;
+    }
+    
     /** 
      * @param source encoded certificate
      * @return decoded generated certificate
@@ -233,7 +279,7 @@ public class Connector {
             System.out.println(entry.getValue() + "\t" + entry.getKey() );
         }
     }
-            
+
     /**
      * @param incrementalDate date to increment
      * @return increment date in format yyyy-MM-dd
@@ -245,5 +291,5 @@ public class Connector {
         c.setTime(format.parse(incrementalDate));
         c.add(Calendar.MONTH, 1); // number of days/months to add
         return incrementalDate = format.format(c.getTime()); // incrementalDate has a value of the new date
-    }   
+    }
 }

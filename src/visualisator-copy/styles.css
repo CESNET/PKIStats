@@ -2,24 +2,23 @@
     Created on : 16.3.2016, 14:12:35
     Author     : jana
 */
-#sliderEjbca {
+.slider{
     width: 75%;  
     margin-top: 20px;
 }
-#sliderLdap {
-    width: 75%;  
-    margin-top: 20px;
-}
-#sliderDigicert {
-    width: 75%;  
-    margin-top: 20px;
-}
-#css-table .collumn { 
-    display: table-cell; 
+#css-table .collumn {
+    display: table-cell;
     float:left;
-    width: 32%; 
     padding: 10px;
-    
+}
+.thirdScreen{
+    width: 32%;
+}
+.fullScreen{ 
+    width: 95%;
+}
+.inline > * {
+    display: inline-block;
 }
 #css-table .collumn:nth-child(even) { 
     background: #ccc;

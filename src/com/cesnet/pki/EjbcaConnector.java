@@ -31,7 +31,7 @@ import org.ejbca.core.protocol.ws.UserMatch;
  * @author jana
  */
 public class EjbcaConnector extends Connector {
-    
+
     private final String ejbcaSection = "ejbca";    
 
     private final int MATCH_TYPE_BEGINSWITH = 1;
@@ -44,21 +44,21 @@ public class EjbcaConnector extends Connector {
     private final HashSet<String> ExcludeUsers = new HashSet<>();
     private final HashSet<UserDataVOWS> UserDataList = new HashSet<>();
     private EjbcaWS ejbcaws;
-     
+
     @Override
     public void generateValidCAs() {
         super.generateValidCAs();
 
         try {
-            // init                        
+            // init
             ExcludeOrgs.addAll(Arrays.asList(properties.get(ejbcaSection,"ExcludeOrgs").split(",")));
             ExcludeUsers.addAll(Arrays.asList(properties.get(ejbcaSection,"ExcludeUsers").split(",")));
-                                   
+
             searchValidUsername();
-            
+
             countValidCAs(); 
-            
-            
+
+
         } catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
@@ -79,7 +79,7 @@ public class EjbcaConnector extends Connector {
 
         UserDataList.addAll(searchValidUsernameBy100(new StringBuilder(), new ArrayList<>()));
     }
-    
+
     /**
      * iterates records by alphabet and save results to UserDataList (ejbcaws.findUser returns max 100 records)
      * 
@@ -90,9 +90,9 @@ public class EjbcaConnector extends Connector {
      * @throws ParseException if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
      * @throws CADoesntExistsException_Exception if CA does not exists
-     */  
+     */
     private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
-        
+
     for (char c : characters.toCharArray()) {
 
             stringBuilder.append(c);
@@ -213,6 +213,7 @@ public class EjbcaConnector extends Connector {
                 break;
             }
 
+            // findCerts(String username, boolean onlyValid)
             List<Certificate> certifList = ejbcaws.findCerts(username, false);
 
             for (Certificate encodedCA : certifList) {
