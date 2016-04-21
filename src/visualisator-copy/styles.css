@@ -8,7 +8,8 @@
 }
 .title {
     text-align: center;
-    margin: 10px;
+    width: 60%;
+    margin: auto;
     padding: 15px;
     background-color: white;
 }
@@ -17,6 +18,10 @@
     background-color: white;
     border-top: 2px solid grey;
     border-bottom: 2px solid grey;
+}
+.selectPart {
+    margin: auto;
+    width: 60%;
 }
 #css-table .collumn {
     display: table-cell;

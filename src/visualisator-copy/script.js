@@ -65,6 +65,10 @@ var treshold = {
 google.charts.load('current', {'packages':['corechart', 'table', 'bar']});
 
 function sortResults(json, propertyName) {
+    
+    console.log("sortResults:");
+    console.log(json);
+    
     json = json.sort(function(a, b) {       
         return (b[json, propertyName]-a[json, propertyName]);//(a[json, propertyName] > b[json, propertyName]) ? 1 : ((a[json, propertyName] < b[json, propertyName]) ? -1 : 0);
     });
@@ -132,7 +136,7 @@ function drawChart(parameter) {
 
     // Set chart options
     var optionsVert = {
-        'title':'Number of valid CAs at ' + date[parameter],
+        'title':'Number of valid certificates at ' + date[parameter],
         chartArea:{left:200,right:100,top:50, bottom:200,width:"80%",height:"80%"},
         width: '100%',
         height: 600,
@@ -140,7 +144,7 @@ function drawChart(parameter) {
         fontSize: 12
     };
     var optionsHoriz = {
-        'title':'Number of valid CA at ' + date[parameter],
+        'title':'Number of valid certificates at ' + date[parameter],
         chartArea:{right:0,bottom:15,top:60,width:"80%",height:"80%"},
         width: '100%',
         height: 15*count[parameter] + 100,
@@ -250,10 +254,6 @@ function sortSelectBox(sortType,parameter) {
         sortMasterByName(parameter);
     }
 }
-
-google.charts.setOnLoadCallback(function(){ drawChart('Ejbca'); });
-google.charts.setOnLoadCallback(function(){ drawChart('Ldap'); });
-google.charts.setOnLoadCallback(function(){ drawChart('Digicert'); });
 
 $(document).ready(function() {
 

@@ -30,6 +30,8 @@ var tresholdServer = 1;
 var tresholdLdap = 1;
 var tresholdClient = 1;
 
+var lastSortedBy = 'Ldap';
+
 var json = {
     'Server': jsonServer,
     'Ldap': jsonLdap,
@@ -72,45 +74,81 @@ function sortJsonByAlphabeth(json) {
     return orderedByName;
 }
 
-function sortJsonByNumbers(json) {
-    var swappedJSON = {};
-    Object.keys(json).sort(sortNumberss).forEach(function(key) {
-        swappedJSON[json[key]] = key;
+function sortResults(json, propertyName) {
+    json = json.sort(function(a, b) {       
+        return (b[json, propertyName]-a[json, propertyName]);
     });
-    var swappedJSONback = {};
+}
+
+function sortMePlease(json, propertyName) {
+    var sorted = [];
+    var original = json.organizations;
+    var keySet = Object.keys(original);       
+            
+    for (var i=0; i<keySet.length; i++) {        
+        var current = original[keySet[i]];        
+        sorted.push(current[0]);
+    }
+    
+    sortResults(sorted, propertyName); 
+    
+    var finalSort = {};
+    var organization = {};
+    for (var i=0; i<sorted.length; i++) { 
+        
+        organization[sorted[i].name] = [sorted[i]];
+    }
+    
+    finalSort.organizations = organization;
+        
+    return finalSort;
+}
+
+function sortJsonByNumbers(json) {
+    var toSort = json.organizations;
+    
+    var swappedJSON = {};
+    Object.keys(toSort).sort().forEach(function(key) {
+        swappedJSON[toSort[key]] = key;
+    });
+    
+    var orderedByNum = {};
     Object.keys(swappedJSON).sort(sortNumberss).forEach(function(key) {
-        swappedJSONback[swappedJSON[key]] = key;
+        orderedByNum[key] = swappedJSON[key];
     });
 
+
+    var swappedJSONback = {};
+    Object.keys(orderedByNum).sort().forEach(function(key) {
+        swappedJSONback[orderedByNum[key]] = key;
+    });
+        
     return swappedJSONback;
 }
 
-function orderArray(array_with_order, array_to_order) {
-                   // server          ldap original
-    var ordered_array = [];
-    var len = Object.keys(array_to_order).length;
-    var index;
-    var current;
-    var remaining = [];
-    
-    var keys = Object.keys(array_to_order);    
+function orderArray(originalArray, sortedKeys) {
+                       // ldap original    server keys
+    var orderedArray = {};
+    var len = Object.keys(sortedKeys).length;
+    var original_keys = Object.keys(originalArray); 
+    var current = [];   
     
     for (var i = 0; i < len; i++) {      
-        current = array_to_order[keys[i]];
-        index = array_with_order.indexOf(current[0].name);
-        if (index !== -1) {
-        	ordered_array[index] = current[0];
-        } else {
-          remaining.push(current[0]);
-        }
+        current = originalArray[sortedKeys[i]];
+                
+	orderedArray[current[0].name] = [current[0]];
     }
-
-    for (var i = 0; i < remaining.length; i++) {
-        ordered_array.push(remaining[i]);
+            
+    for (var i = 0; i < original_keys.length; i++) {
+        
+        if (!(original_keys[i] in orderedArray)) {
+            current = originalArray[original_keys[i]];            
+            orderedArray[current[0].name] = [current[0]];
+        }
     }
 		
     //return changed the array
-    return ordered_array;
+    return orderedArray;
 }
 
 function drawOnlyChart(sortBy) {
@@ -118,51 +156,47 @@ function drawOnlyChart(sortBy) {
     count = 0;
 
     var parsedValidCAs = JSON.parse(json['Ldap']);
-    var parsedValidServerCAs = JSON.parse(json['Client']);
-    var parsedValidClientCAs = JSON.parse(json['Server']);
-   
-   alert(parsedValidCAs.organizations);
-   console.log(Object.keys(JSON.parse(json['Ldap']).organizations));
-   
+    var parsedValidServerCAs = JSON.parse(json['Server']);
+    var parsedValidClientCAs = JSON.parse(json['Client']);
+      
     var originalSorted;
-   
+        
     // sort
     if (sortBy != null) {
-        var sorted;
+        var sorted = {};
         
         var radioChecked = $('input[name="Master'+sortBy+'"]:checked').val();
         if (radioChecked === 'Master'+sortBy+'Abc') {            
             switch(sortBy) {
                 case 'Ldap':
-                    sorted = sortJsonByAlphabeth(parsedValidCAs);
+                    sorted = sortMePlease(parsedValidCAs, "name");
                     break;
-                case 'Client':
-                    sorted = sortJsonByAlphabeth(parsedValidClientCAs);
+                case 'Client':                    
+                    sorted = sortMePlease(parsedValidClientCAs, "name");
                     break;
-                case 'Server':
-                    sorted = sortJsonByAlphabeth(parsedValidServerCAs);
+                case 'Server':                    
+                    sorted = sortMePlease(parsedValidServerCAs, "name");
                     break;            
             }
         } else if (radioChecked === 'Master'+sortBy+'Num') {
             switch(sortBy) {
-                case 'Ldap':
-                    sorted = sortJsonByNumbers(parsedValidCAs);
+                case 'Ldap':                    
+                    sorted = sortMePlease(parsedValidCAs, "count");
                     break;
-                case 'Client':
-                    sorted = sortJsonByNumbers(parsedValidClientCAs);
+                case 'Client':                    
+                    sorted = sortMePlease(parsedValidClientCAs, "count");
                     break;
-                case 'Server':
-                    sorted = sortJsonByNumbers(parsedValidServerCAs);
+                case 'Server':                    
+                    sorted = sortMePlease(parsedValidServerCAs, "count");
                     break;            
             }
         }
         
-        var sortedKeys = Object.keys(sorted);
-
-        //originalSorted = orderArray(sortedKeys, parsedValidCAs.organizations);
-        //console.log(originalSorted);        
+        var sortedKeys = Object.keys(sorted.organizations);
+        originalSorted = orderArray(parsedValidCAs.organizations, sortedKeys);        
+        parsedValidCAs.organizations = originalSorted;
         
-        //parsedValidCAs = sorted;
+        lastSortedBy = sortBy;
     }
     // Create the data table.
     var data = new google.visualization.DataTable();
@@ -249,9 +283,9 @@ function setSelectBox(parameter) {
     // sort
     var radioChecked = $('input[name="Master'+parameter+'"]:checked').val();
     if (radioChecked === 'Master'+parameter+'Abc') {
-        parsedValidCAs = sortJsonByAlphabeth(parsedValidCAs);
+        parsedValidCAs = sortMePlease(parsedValidCAs, "name");
     } else if (radioChecked === 'Master'+parameter+'Num') {
-        parsedValidCAs = sortJsonByNumbers(parsedValidCAs);
+        parsedValidCAs = sortMePlease(parsedValidCAs, "count");
     }
 
     // generate data
@@ -349,19 +383,19 @@ $(document).ready(function() {
     $('#btnSliderClient').click(function() {
         treshold['Client'] = $('#sliderClient').slider('value');
         setSelectBox('Client');
-        drawOnlyChart();
+        drawOnlyChart(lastSortedBy);
     });
     // slider Ldap
     $('#btnSliderLdap').click(function() {
         treshold['Ldap'] = $('#sliderLdap').slider('value');
         setSelectBox('Ldap');
-        drawOnlyChart();
+        drawOnlyChart(lastSortedBy);
     });
     // slider Server
     $('#btnSliderServer').click(function() {
         treshold['Server'] = $('#sliderServer').slider('value');
         setSelectBox('Server');
-        drawOnlyChart();
+        drawOnlyChart(lastSortedBy);
     });
 
 
