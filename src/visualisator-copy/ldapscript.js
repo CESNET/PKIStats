@@ -85,6 +85,34 @@ function sortJsonByNumbers(json) {
     return swappedJSONback;
 }
 
+function orderArray(array_with_order, array_to_order) {
+                   // server          ldap original
+    var ordered_array = [];
+    var len = Object.keys(array_to_order).length;
+    var index;
+    var current;
+    var remaining = [];
+    
+    var keys = Object.keys(array_to_order);    
+    
+    for (var i = 0; i < len; i++) {      
+        current = array_to_order[keys[i]];
+        index = array_with_order.indexOf(current[0].name);
+        if (index !== -1) {
+        	ordered_array[index] = current[0];
+        } else {
+          remaining.push(current[0]);
+        }
+    }
+
+    for (var i = 0; i < remaining.length; i++) {
+        ordered_array.push(remaining[i]);
+    }
+		
+    //return changed the array
+    return ordered_array;
+}
+
 function drawOnlyChart(sortBy) {
     // init values
     count = 0;
@@ -93,9 +121,13 @@ function drawOnlyChart(sortBy) {
     var parsedValidServerCAs = JSON.parse(json['Client']);
     var parsedValidClientCAs = JSON.parse(json['Server']);
    
+   alert(parsedValidCAs.organizations);
+   console.log(Object.keys(JSON.parse(json['Ldap']).organizations));
+   
+    var originalSorted;
+   
     // sort
     if (sortBy != null) {
-        
         var sorted;
         
         var radioChecked = $('input[name="Master'+sortBy+'"]:checked').val();
@@ -124,8 +156,13 @@ function drawOnlyChart(sortBy) {
                     break;            
             }
         }
-        parsedValidCAs = sorted;
-        console.log (sorted);
+        
+        var sortedKeys = Object.keys(sorted);
+
+        //originalSorted = orderArray(sortedKeys, parsedValidCAs.organizations);
+        //console.log(originalSorted);        
+        
+        //parsedValidCAs = sorted;
     }
     // Create the data table.
     var data = new google.visualization.DataTable();
@@ -135,25 +172,43 @@ function drawOnlyChart(sortBy) {
     data.addColumn('number', 'Count Server CAs');  
     
     // generate data
-    for (var entry in parsedValidCAs) {
+    for (var entry in parsedValidCAs.organizations) {
 
-        var numAll = parseInt(parsedValidCAs[entry]);
-        var numClient = parseInt(parsedValidClientCAs[entry]);
-        var numServer = parseInt(parsedValidServerCAs[entry]);
+        var orgAll = parsedValidCAs.organizations[entry][0];  
+        var orgClient;
+        var orgServer;     
+            
+        var numAll = parseInt(orgAll.count);
+        var numClient = 0;
+        var numServer = 0;
+        
+        if (parsedValidClientCAs.organizations[entry] === undefined || parsedValidClientCAs.organizations[entry] === null) {
+            orgClient = -1;
+        } else {
+            orgClient = parsedValidClientCAs.organizations[entry][0];
+            numClient = parseInt(orgClient.count);
+            if (exclusive['Client'].indexOf(orgClient.name) !== -1 || orgClient.count < treshold['Client']) {
+                numClient = 0;
+            }
+        }
+        
+        if (parsedValidServerCAs.organizations[entry] === undefined || parsedValidServerCAs.organizations[entry] === null) {
+            orgServer = -1;
+        } else {
+            orgServer = parsedValidServerCAs.organizations[entry][0];
+            numServer = parseInt(orgServer.count);
+            if (exclusive['Server'].indexOf(orgServer.name) !== -1 || orgServer.count < treshold['Server']) {
+                numServer = 0;
+            }
+        }
         
         // do not add excluded organisations
-        if (exclusive['Ldap'].indexOf(entry) !== -1 || parsedValidCAs[entry] < treshold['Ldap']) {
+        if (exclusive['Ldap'].indexOf(orgAll.name) !== -1 || orgAll.count < treshold['Ldap']) {
             numAll = 0;
         }
-        if (exclusive['Client'].indexOf(entry) !== -1 || parsedValidCAs[entry] < treshold['Client']) {
-            numClient = 0;
-        }
-        if (exclusive['Server'].indexOf(entry) !== -1 || parsedValidCAs[entry] < treshold['Server']) {
-            numServer = 0;
-        }
-        
+          
         if (numAll != 0 || numClient != 0 || numServer != 0) {
-            data.addRow([entry, numAll, numClient, numServer]);
+            data.addRow([orgAll.name, numAll, numClient, numServer]);
             count++;
         }       
     }
@@ -176,12 +231,12 @@ function drawOnlyChart(sortBy) {
     redraw['Ldap'] = false;
 }
 
-function setSelectBox(parameter) {
+function setSelectBox(parameter) {    
     // init values
     var max = 0;
 
     var parsedValidCAs = JSON.parse(json[parameter]);   
-             
+            
     // set to default
     if (redraw[parameter]===true) {
         $("#PairedSelectBox"+parameter).empty();
@@ -200,25 +255,27 @@ function setSelectBox(parameter) {
     }
 
     // generate data
-    for (var entry in parsedValidCAs) {
+    for (var entry in parsedValidCAs.organizations) {
 
-        if (parsedValidCAs[entry] >= treshold[parameter]) {
+        var org = parsedValidCAs.organizations[entry][0];
+                    
+        if (org.count >= treshold[parameter]) {
 
             // do not add excluded organisations
-            if (exclusive[parameter].indexOf(entry) !== -1) {
+            if (exclusive[parameter].indexOf(org.name) !== -1) {
                 continue;
             }
 
             // find the biggest number of CA
-            if (parsedValidCAs[entry] > max) {
-                max = parseInt(parsedValidCAs[entry]);
+            if (org.count > max) {
+                max = parseInt(org.count);
             }
 
             // add new options to select box only once
             if (redraw[parameter]===true) {
                 $selectBox.append($('<option />', {
-                    value: parseInt(parsedValidCAs[entry]),
-                    text: entry + " (" + parsedValidCAs[entry] + ")"
+                    value: parseInt(org.count),
+                    text: org.name + " (" + org.count + ")"
                 }));
             }
         }

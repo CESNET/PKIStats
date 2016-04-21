@@ -1,4 +1,4 @@
-/* 
+/*
     Created on : 18.3.2016, 15:47:26
     Author     : jana
 */
@@ -64,37 +64,14 @@ var treshold = {
 // Load the Visualization API and the corechart package.
 google.charts.load('current', {'packages':['corechart', 'table', 'bar']});
 
-function sortNumberss(a,b) {
-    return b-a;
-}
-
-function sortJsonByAlphabeth(json) {
-    var orderedByName = {};
-    Object.keys(json).sort().forEach(function(key) {
-        orderedByName[key] = json[key];
+function sortResults(json, propertyName) {
+    json = json.sort(function(a, b) {       
+        return (b[json, propertyName]-a[json, propertyName]);//(a[json, propertyName] > b[json, propertyName]) ? 1 : ((a[json, propertyName] < b[json, propertyName]) ? -1 : 0);
     });
-
-    return orderedByName;
-}
-
-function sortJsonByNumbers(json) {
-    var swappedJSON = {};
-    Object.keys(json).sort(sortNumberss).forEach(function(key) {
-        swappedJSON[json[key]] = key;
-    });
-    var orderedByKey = {};
-    Object.keys(swappedJSON).sort(sortNumberss).forEach(function(key) {
-        orderedByKey[key] = swappedJSON[key];
-    });
-    var swappedJSONback = {};
-    Object.keys(orderedByKey).sort(sortNumberss).forEach(function(key) {
-        swappedJSONback[orderedByKey[key]] = key;
-    });
-
-    return swappedJSONback;
 }
 
 function drawChart(parameter) {
+        
     // init values
     var max = 0;
     count[parameter] = 0;
@@ -115,37 +92,39 @@ function drawChart(parameter) {
         treshold[parameter] = 1;
     }
 
-    ////////////////////////////////////////////////////////////////
+    // sort by key or value
     var radioChecked = $('input[name="Master'+parameter+'"]:checked').val();
-    if (radioChecked === 'Master'+parameter+'Abc') {
-        parsedValidCAs = sortJsonByAlphabeth(parsedValidCAs);
-    } else if (radioChecked === 'Master'+parameter+'Num') {
-        parsedValidCAs = sortJsonByNumbers(parsedValidCAs);
+    if (radioChecked === 'Master'+parameter+'Abc') {        
+        sortResults(parsedValidCAs.organizations, "name");        
+    } else if (radioChecked === 'Master'+parameter+'Num') {        
+        sortResults(parsedValidCAs.organizations, "count");        
     }
 
-    for (var entry in parsedValidCAs) {
+    for (var i=0; i<parsedValidCAs.organizations.length; i++) {
 
-        if (parsedValidCAs[entry] >= treshold[parameter]) {
+        var org = parsedValidCAs.organizations[i];
+
+        if (org.count >= treshold[parameter]) {
 
             // do not add excluded organisations
-            if (exclusive[parameter].indexOf(entry) !== -1) {
+            if (exclusive[parameter].indexOf(org.name) !== -1) {
                 continue;
             }
 
             // find the biggest number of CA
-            if (parsedValidCAs[entry] > max) {
-                max = parseInt(parsedValidCAs[entry]);
+            if (org.count > max) {
+                max = parseInt(org.count);
             }
 
             // add new options to select box only once
             if (redraw[parameter]===true) {
                 $selectBox.append($('<option />', {
-                    value: parseInt(parsedValidCAs[entry]),
-                    text: entry + " (" + parsedValidCAs[entry] + ")"
+                    value: parseInt(org.count),
+                    text: org.name + " (" + org.count + ")"
                 }));
             }
 
-            data.addRow([entry, parseInt(parsedValidCAs[entry])]);
+            data.addRow([org.name, parseInt(org.count)]);
 
             count[parameter]++;
         }
@@ -420,3 +399,34 @@ $(document).ready(function() {
         });
     });
 });
+
+//functionExport(json_data, "User_Report", true);
+function exportCSV(parameter, title) {
+    
+    var csvContent = "name,count\n";
+    
+    var length = document.getElementById("MasterSelectBox" + parameter).options.length;
+    
+    for (var i=0; i<length; i++) {
+        var text = document.getElementById("MasterSelectBox" + parameter).options[i].text;
+        
+        var name = text.substring(0, text.lastIndexOf('(')-1);
+        var count = text.substring(text.lastIndexOf('(')+1, text.lastIndexOf(')'));
+        
+        csvContent += "\""+name + "\"," + count + "\n";
+    }
+    
+    var CSV = csvContent;
+    
+    //Generate a file name
+    var fileName = title.replace(/ /g, "_");
+    var uri = 'data:text/csv;charset=UTF-8,%EF%BB%BF' + encodeURI(CSV);
+    var link = document.createElement("a");
+    link.href = uri;
+    link.style = "visibility:hidden";
+    link.download = fileName + ".csv";
+    //this part will append the anchor tag and remove it after automatic click
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+}

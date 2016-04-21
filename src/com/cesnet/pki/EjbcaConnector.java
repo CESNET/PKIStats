@@ -18,7 +18,6 @@ import javax.xml.bind.DatatypeConverter;
 import javax.xml.namespace.QName;
 import javax.xml.ws.Service;
 import org.ejbca.core.protocol.ws.AuthorizationDeniedException_Exception;
-import org.ejbca.core.protocol.ws.CADoesntExistsException_Exception;
 import org.ejbca.core.protocol.ws.Certificate;
 import org.ejbca.core.protocol.ws.EjbcaException_Exception;
 import org.ejbca.core.protocol.ws.EjbcaWS;
@@ -46,8 +45,8 @@ public class EjbcaConnector extends Connector {
     private EjbcaWS ejbcaws;
 
     @Override
-    public void generateValidCAs() {
-        super.generateValidCAs();
+    public void generateValidCerts() {
+        super.generateValidCerts();
 
         try {
             // init
@@ -56,10 +55,10 @@ public class EjbcaConnector extends Connector {
 
             searchValidUsername();
 
-            countValidCAs(); 
+            countValidCerts(); 
 
 
-        } catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException | CADoesntExistsException_Exception ex) {
+        } catch (CertificateException | AuthorizationDeniedException_Exception | EjbcaException_Exception | IllegalQueryException_Exception | ParseException | InvalidNameException ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -73,9 +72,8 @@ public class EjbcaConnector extends Connector {
      * @throws CertificateException This exception indicates one of a variety of certificate problems   
      * @throws ParseException if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception if CA does not exists
      */
-    private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
+    private void searchValidUsername() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
 
         UserDataList.addAll(searchValidUsernameBy100(new StringBuilder(), new ArrayList<>()));
     }
@@ -89,9 +87,8 @@ public class EjbcaConnector extends Connector {
      * @throws CertificateException This exception indicates one of a variety of certificate problems
      * @throws ParseException if the beginning of the specified string cannot be parsed.
      * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception if CA does not exists
      */
-    private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException, CADoesntExistsException_Exception {
+    private List<UserDataVOWS> searchValidUsernameBy100(StringBuilder stringBuilder, List<UserDataVOWS> list) throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception, CertificateException, ParseException, InvalidNameException {
 
     for (char c : characters.toCharArray()) {
 
@@ -145,10 +142,9 @@ public class EjbcaConnector extends Connector {
      * 
      * @return size of created UserDataList
      * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
-     * @throws EjbcaException_Exception an error caused by ejbca
      * @throws IllegalQueryException_Exception if a given query was not legal 
      */
-    private int initUserData() throws AuthorizationDeniedException_Exception, EjbcaException_Exception, IllegalQueryException_Exception {
+    private int initUserData() throws AuthorizationDeniedException_Exception, IllegalQueryException_Exception {
 
         // create user match from properties to find users
         UserMatch um = new UserMatch();
@@ -193,22 +189,20 @@ public class EjbcaConnector extends Connector {
      * @throws AuthorizationDeniedException_Exception an operation was attempted for which the user was not authorized
      * @throws EjbcaException_Exception an error caused by ejbca
      * @throws InvalidNameException This exception indicates that the name being specified does not conform to the naming syntax of a naming system
-     * @throws CADoesntExistsException_Exception if CA does not exists
-     */
+      */
     @Override
-    protected void countValidCAs() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException, CADoesntExistsException_Exception {
+    protected void countValidCerts() throws CertificateException, ParseException, AuthorizationDeniedException_Exception, EjbcaException_Exception, InvalidNameException {
 
         // init variables
-        X509Certificate CA;
+        X509Certificate cert;
         String organization;
 
-        // traverses all the current data and count valid CAs
+        // traverses all the current data and count valid certificates
         for (UserDataVOWS data : UserDataList) {
-        //for (int i = 0; i < 5; i++) {   UserDataVOWS data = UserDataList.get(i); // for DEBUG
-
+        
             String username = data.getUsername();
 
-            // do not use CA from excluded username
+            // do not use certificates from excluded username
             if (ExcludeUsers.contains(username)) {
                 break;
             }
@@ -216,24 +210,24 @@ public class EjbcaConnector extends Connector {
             // findCerts(String username, boolean onlyValid)
             List<Certificate> certifList = ejbcaws.findCerts(username, false);
 
-            for (Certificate encodedCA : certifList) {
+            for (Certificate encodedCert : certifList) {
 
-                byte[] sourceBase64 = encodedCA.getCertificateData();
+                byte[] sourceBase64 = encodedCert.getCertificateData();
                 byte[] source = DatatypeConverter.parseBase64Binary(new String(sourceBase64, Charset.forName("UTF-8")));
                 
-                CA = decodeCertificate(source);
+                cert = decodeCertificate(source);
 
-                organization = getOrganizationName(CA);
+                organization = getOrganizationName(cert);
 
-                // do not use CA from excluded organization
+                // do not use certificates from excluded organization
                 if (ExcludeOrgs.contains(organization)) {
                     break;
                 }
 
-                // if CA contains organization and is valid, increment in map
-                if (organization != null && isCaValidAtDay(CA, format.parse(properties.get(ejbcaSection, "CAvalidAtDate")))) {
-                    int count = validCAs.containsKey(organization) ? validCAs.get(organization) : 0;
-                    validCAs.put(organization, count + 1);
+                // if certificates contains organization and is valid, increment in map
+                if (organization != null && isCertValidAtDay(cert, referenceDate)) {
+                    int count = validCertificates.containsKey(organization) ? validCertificates.get(organization) : 0;
+                    validCertificates.put(organization, count + 1);
                 }
             }
         }

@@ -16,6 +16,7 @@ import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.Calendar;
 import java.util.Date;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
@@ -35,10 +36,16 @@ public class Connector {
     private final String INI_FILE = "/etc/ejbca.ini";
 
     protected final SimpleDateFormat format = new SimpleDateFormat ("yyyy-MM-dd");
-    protected Map<String, Integer> validCAs = new TreeMap<>();
-    protected Ini properties;;
+    protected Map<String, Integer> validCertificates = new TreeMap<>();
+    protected HashSet<X509Certificate> cacheCertificates = new HashSet<>();
+    protected Ini properties;
     protected CertificateFactory certFactory;
+    private String compareDate;    
+    protected Date referenceDate;
 
+    protected final int NOT_BEFORE = 0;
+    protected final int NOT_AFTER = 1;
+    
     public static final String ANSI_RESET = "\u001B[0m";
     public static final String ANSI_BLACK = "\u001B[30m";
     public static final String ANSI_RED = "\u001B[31m";
@@ -48,43 +55,65 @@ public class Connector {
     public static final String ANSI_PURPLE = "\u001B[35m";
     public static final String ANSI_CYAN = "\u001B[36m";
     public static final String ANSI_WHITE = "\u001B[37m";
-
-    public static void main(String[] args) {
-
+    
+    public static void main(String[] args) throws ParseException {
         Connector c = new Connector();
-        /*      
+        /*  
         System.out.println(ANSI_GREEN+"EJBCA:");
         EjbcaConnector ejbcaCon = new EjbcaConnector();
-        ejbcaCon.generateValidCAs();
-        c.printResults(ejbcaCon.validCAs);
+        ejbcaCon.generateValidCerts();
+        c.printResults(ejbcaCon.validCertificates);
         
         System.out.println("=======================");
 
         System.out.println(ANSI_BLUE+"LDAP:");
         LdapConnector ldapCon = new LdapConnector();
-        ldapCon.generateValidCAs();
-        c.printResults(ldapCon.validCAs);
+        ldapCon.generateValidCerts();
+        c.printResults(ldapCon.validCertificates);
        
         System.out.println("=======================");
              
         System.out.println(ANSI_PURPLE+"DIGICERT:");
         DigicertConnector digicertCon = new DigicertConnector();
-        digicertCon.generateValidCAs();
-        */       
+        digicertCon.generateValidCerts();
+        */
+        
+        /*
+        System.out.println(c.compareDate);        
+        String json = c.getLdapJSON("client");
+        System.out.println(json + "\n");        
+//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_client_v2");
+        System.out.println(c.compareDate);
+        json = c.getLdapJSON("all");
+        System.out.println(json + "\n");
+//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_all_v2");
+        System.out.println(c.compareDate);
+        json = c.getLdapJSON("server");
+        System.out.println(json + "\n");
+//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_server_v2");
+        */
+//        DigicertConnector digicertCon = new DigicertConnector();
+//        digicertCon.generateValidCerts();
+//        c.printResults(digicertCon.validCertificates);
+        
+        System.out.println(c.getJSON("digicert"));
+        
+        
     }
-
+    
     public Connector() {
         try {
             
             this.certFactory = CertificateFactory.getInstance("X.509");
             this.properties = loadIniFile();
+            this.referenceDate = format.parse(properties.get("ejbca", "CAvalidAtDate"));
             
-        } catch (CertificateException | IOException ex) {
+        } catch (CertificateException | IOException | ParseException ex) {
             Logger.getLogger(Connector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
 
-    protected void generateValidCAs() {
+    protected void generateValidCerts() {
         try {
             System.out.println(new java.util.Date());
             connect();
@@ -94,12 +123,12 @@ public class Connector {
     }
 
     protected void connect() throws Exception {}
-    protected void countValidCAs()  throws Exception {}
+    protected void countValidCerts()  throws Exception {}
     
     /**
      * @param select parameter which JSON do you want. Allowed input are "ejbca", "ldap" or "digicert"\n
      *        all cases returns all valid CAs
-     * @return validCAs converted to JSON
+     * @return validCertificates converted to JSON
      */
     public String getJSON(String select) {
 
@@ -109,18 +138,18 @@ public class Connector {
         switch (select) {
             case "ejbca":
                 EjbcaConnector ejbcaCon = new EjbcaConnector();
-                ejbcaCon.generateValidCAs();
-                completeMap = ejbcaCon.validCAs;
+                ejbcaCon.generateValidCerts();
+                completeMap = ejbcaCon.validCertificates;
                 break;
             case "ldap":
                 LdapConnector ldapCon = new LdapConnector();
-                ldapCon.generateValidCAs("all");
-                completeMap = ldapCon.validCAs;
+                ldapCon.generateValidCerts("all");
+                completeMap = ldapCon.validCertificates;
                 break;
             case "digicert":
                 DigicertConnector digicertCon = new DigicertConnector();
-                digicertCon.generateValidCAs();
-                completeMap = digicertCon.validCAs;
+                digicertCon.generateValidCerts();
+                completeMap = digicertCon.validCertificates;
                 break;
             default:
                 System.out.println("wrong input, you can write only ejbca, ldap or digicert");
@@ -129,14 +158,14 @@ public class Connector {
 
         // create JSON alphabeticaly ordered
         StringBuilder handmadeJSON = new StringBuilder();
-        handmadeJSON.append("{");
+        handmadeJSON.append("{\"organizations\":[");
 
         for (Map.Entry<String, Integer> entry : completeMap.entrySet()) {
-            handmadeJSON.append("\"").append(entry.getKey()).append("\":").append(entry.getValue()).append(",");
+            handmadeJSON.append("{\"name\":\"").append(entry.getKey()).append("\",\"count\":\"").append(entry.getValue()).append("\"},");
         }
 
         handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
-        handmadeJSON.append("}");
+        handmadeJSON.append("]}");
 
         return handmadeJSON.toString();
     }
@@ -144,26 +173,26 @@ public class Connector {
      * returns JSON from ldap
      * 
      * @param select parameter which Ldap JSON do you want. Allowed input are "server", "client" or "all"
-     * @return validCAs converted to JSON
+     * @return validCertificates converted to JSON
      */
     public String getLdapJSON(String select) {
 
         Map<String, Integer> completeMap = new TreeMap<>();
         
         LdapConnector ldapCon = new LdapConnector();
-        ldapCon.generateValidCAs(select);
-        completeMap = ldapCon.validCAs;            
+        ldapCon.generateValidCerts(select);
+        completeMap = ldapCon.validCertificates;            
 
         // create JSON alphabeticaly ordered
         StringBuilder handmadeJSON = new StringBuilder();
-        handmadeJSON.append("{");
+        handmadeJSON.append("{\"organizations\":{");
 
         for (Map.Entry<String, Integer> entry : completeMap.entrySet()) {
-            handmadeJSON.append("\"").append(entry.getKey()).append("\":").append(entry.getValue()).append(",");
+            handmadeJSON.append("\"").append(entry.getKey()).append("\":[{\"name\":\"").append(entry.getKey()).append("\",\"count\":\"").append(entry.getValue()).append("\"}],");
         }
 
         handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
-        handmadeJSON.append("}");
+        handmadeJSON.append("}}");
 
         return handmadeJSON.toString();
     }
@@ -186,7 +215,7 @@ public class Connector {
      * @return date from ini file
      */
     public String getDate() {
-        return properties.get("ejbca", "CAvalidAtDate");
+        return properties.get("ejbca", "CertValidAtDate");
     }
 
     /**
@@ -247,33 +276,37 @@ public class Connector {
     }
 
     /**
-     * Checks if CA is valid at given date. It does not check revocation status.
+     * Checks if certificate is valid at given date. It does not check revocation status.
      * 
      * @param cert certificate with its validity
      * @param date date to compare
      * @return true if certificate is valid at given date
      */
-    protected boolean isCaValidAtDay(X509Certificate cert, Date date) {
+    protected boolean isCertValidAtDay(X509Certificate cert, Date date) {
 
-       /* if (date.after(cert.getNotBefore()) && date.before(cert.getNotAfter())) {
-            System.out.print(ANSI_GREEN);
-        } else {
-            System.out.print(ANSI_RED);
-        }
-        
-        System.out.println(cert.getNotBefore() + "\t" + cert.getNotAfter() + ANSI_RESET);        
-        */
         return (date.after(cert.getNotBefore()) && date.before(cert.getNotAfter()));
+    }
+    
+    /**
+     * Checks if certificate is valid at given date. It does not check revocation status.
+     * 
+     * @param certificateDates selected notBefore and notAfter parameters from certificate
+     * @param date date to compare
+     * @return true if certificate is valid at given date
+     */
+    protected boolean isCertValidAtDay(Date[] certificateDates, Date date) {
+
+        return (date.after(certificateDates[NOT_BEFORE]) && date.before(certificateDates[NOT_AFTER]));
     }
 
     /**
-     * prints number of valid CA at specific date for each organization
+     * prints number of valid certificate at specific date for each organization
      * 
      * @param map which map should be printed
      */
     protected void printResults(Map<String, Integer> map) {
         // print results
-        System.out.println("Number of valid CA at " + properties.get("ejbca", "CAvalidAtDate") + " is:");
+        System.out.println("Number of valid cerfificates at " + compareDate + " is:");
 
         for (Map.Entry entry : map.entrySet()) {
             System.out.println(entry.getValue() + "\t" + entry.getKey() );
