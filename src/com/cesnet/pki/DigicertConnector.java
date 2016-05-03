@@ -24,7 +24,6 @@ import java.security.cert.CertificateException;
 import java.security.cert.X509Certificate;
 import java.text.ParseException;
 import java.util.ArrayList;
-import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.TreeMap;
@@ -49,42 +48,44 @@ public class DigicertConnector extends Connector {
 
     private final String digicertSection = "digicert";   
     private final String urlBase = "https://www.digicert.com/services/v2/";
-
+    private final int API_KEY = 0;
+    private final int ORG_NAME = 1;
+    private final int ORG_CS_NAME = 2;
+    private final int ORG_EN_NAME = 3;
+    
     private final int LIMIT = 1000;
     private final String key = properties.get(digicertSection,"apiKey");
 
-    private HashMap<Integer, String> organizationId_has_ApiKey;
-    private HashMap<Integer, String> parentId_has_organizationName = new HashMap<>();
+    private HashMap<Integer, String[]> parentInfo;
     private HashMap<Integer, Integer> parentId_has_numOfCerts = new HashMap<>();
     
-    private HashMap<Integer, Date[]> cache = new HashMap<>();
-    
+    private HashMap<Integer, CertificateData> cache = new HashMap<>();
+
     @Override  
     public void generateValidCerts() {
         super.generateValidCerts();
-                
+        
+        // choose json language
+        int lang = ORG_EN_NAME;
+        
         try {
             // get api keys to all organizations
             LdapConnector lc = new LdapConnector();
-            organizationId_has_ApiKey = lc.findApiKeysForDigicert();            
-            
+            parentInfo = lc.findApiKeysForDigicert();            
+                    
             // init
             cache = loadGeneratedData();
+            
             validCertificates = new TreeMap<>();
             
-            int offset = 0;
-            
-            // test 
-            getOrganizations();
-            
             // count valid certificates
-            getOrderId(offset);
-
-            // 
+            int offset = 0;
+            countValidCerts(offset);
+            
             for (Map.Entry<Integer, Integer> entry : parentId_has_numOfCerts.entrySet()) {
 
                 int parentId = entry.getKey();
-                String organizationName = parentId_has_organizationName.get(parentId);
+                String organizationName = parentInfo.get(parentId)[lang];
 
                 validCertificates.put(organizationName, entry.getValue());
             }
@@ -92,7 +93,7 @@ public class DigicertConnector extends Connector {
             // save cache
             saveGeneratedData(cache);
         
-        } catch ( IOException | IllegalArgumentException | NamingException | JSONException | CMSException | ParseException | CertificateException ex) {
+        } catch ( IOException | NamingException | JSONException | IllegalArgumentException | CMSException | ParseException | CertificateException ex) {
             Logger.getLogger(DigicertConnector.class.getName()).log(Level.SEVERE, null, ex);
         }
     }
@@ -123,10 +124,10 @@ public class DigicertConnector extends Connector {
         conn.setRequestProperty("Accept", "application/json");
         conn.setDoOutput(true);
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));
-
-        String rawJson = reader.readLine();
- 
+        String rawJson;
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+            rawJson = reader.readLine();
+        }
         return new JSONObject(rawJson);
     }
     
@@ -157,12 +158,16 @@ public class DigicertConnector extends Connector {
         conn.setRequestProperty("Accept", "*/*");
         conn.setDoOutput(true);
 
-        BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"));           
-
-        while((currentLine = reader.readLine()) != null) {
-            builder.append(currentLine);
+        try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
+            while((currentLine = reader.readLine()) != null) {
+                builder.append(currentLine);
+            }
+        } catch(Exception e) {
+            System.out.println("apiKey\t" + apiKey);
+            System.out.println(e.getMessage());
+            return null;
         }
-
+        
         builder.delete(0, "-----BEGIN PKCS7-----".length()); // we do not want first line (-----BEGIN PKCS7-----)
         builder.delete(builder.length()-("-----END PKCS7-----".length()), builder.length()); // neather -----END PKCS7-----
 
@@ -170,7 +175,6 @@ public class DigicertConnector extends Connector {
     }
 
     /**
-     * 
      * @param offset positive integer identifying the number of records to skip
      * @throws JSONException if the key is not found or if the value is not a JSONArray.
      * @throws IOException if an I/O error occurs while creating the input stream
@@ -183,8 +187,8 @@ public class DigicertConnector extends Connector {
      * @throws UnknownServiceException if the protocol does not support input
      * @throws CertificateException this exception indicates one of a variety of certificate problems
      */
-    private void getOrderId(int offset) throws JSONException, IOException, CMSException, ParseException, MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, UnknownServiceException, CertificateException {
-
+    private void countValidCerts(int offset) throws JSONException, IOException, CMSException, ParseException, MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, UnknownServiceException, CertificateException {
+       
         JSONObject orders = callDigicert("order/certificate", offset);
 
         JSONArray jsonArray = orders.getJSONArray("orders");
@@ -197,25 +201,20 @@ public class DigicertConnector extends Connector {
 
             String status = order.getString("status");
 
+            // if status is one of processing, issued, revoked, canceled or needs_approval
             if(!status.equals("rejected") && !status.equals("needs_approval") && !status.equals("pending")) {
-                
+    
+                // if the result is in the cache
                 if (cache.containsKey(order.getInt("id"))) {                     
                     
                     JSONObject container = order.getJSONObject("container");
                     int parentId = container.getInt("id");
-                    
-                    JSONObject organization = order.getJSONObject("organization");
-                    
-                    // save organization id's name
-                    if (parentId_has_organizationName.get(parentId)==null) {
-                        parentId_has_organizationName.put(parentId, organization.getString("name"));
-                    }
-                    
+                  
                     // get certificate validation
-                    Date[] validBetween = cache.get(order.getInt("id"));                    
+                    CertificateData data = cache.get(order.getInt("id"));                    
                     
-                    if (isCertValidAtDay(validBetween, referenceDate)) {
-                              
+                    if (isCertValidAtDay(data.certificate, referenceDate)) {
+                        
                         int value = 0;
                         if (parentId_has_numOfCerts.get(parentId) != null) {
                             value = parentId_has_numOfCerts.get(parentId);
@@ -223,25 +222,20 @@ public class DigicertConnector extends Connector {
                         parentId_has_numOfCerts.put(parentId, value+1);
                     }
                     
+                // compute result
                 } else {
-                                
+                               
                     JSONObject certificate = order.getJSONObject("certificate");
                     int certificateId = certificate.getInt("id");
 
                     JSONObject container = order.getJSONObject("container");
                     int parentId = container.getInt("id");
-
-                    JSONObject organization = order.getJSONObject("organization");
                     
-                    // save organization id's name
-                    if (parentId_has_organizationName.get(parentId)==null) {
-                        parentId_has_organizationName.put(parentId, organization.getString("name"));
-                    }
-
-                    // test certificate if it is valid
-                    if (organizationId_has_ApiKey.get(parentId)!=null) { // because of Univerzita Jana Evangelisty Purkyne
-
-                        decodeCertificate(order.getInt("id"), certificateId, parentId, organizationId_has_ApiKey.get(parentId));
+                    if (parentInfo.containsKey(parentId)) { // because of CESNET NREN
+                        decodeCertificate(order.getInt("id"), certificateId, parentId, container.getString("name"), parentInfo.get(parentId)[API_KEY]);
+                    } else {
+                        System.out.println("ldap doesn't know id: " + parentId);
+                        System.out.println(order);
                     }
                 }
             }
@@ -249,10 +243,10 @@ public class DigicertConnector extends Connector {
 
         int countResults = pageInfo.getInt("total");
         offset+=LIMIT;
-
+        
         if (countResults > offset) {
-            getOrderId(offset);
-        }
+            countValidCerts(offset);
+        }        
     }
 
     /**
@@ -271,31 +265,36 @@ public class DigicertConnector extends Connector {
      * @throws CMSException master exception type for all exceptions caused in OpenCms
      * @throws CertificateException this exception indicates one of a variety of certificate problems
      */
-    private void decodeCertificate(int orderId, int certificateId, int parentId, String apiKey) throws MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, IOException, UnknownServiceException, CMSException, ParseException, CertificateException {
+    private void decodeCertificate(int orderId, int certificateId, int parentId, String parentName, String apiKey) throws MalformedURLException, ProtocolException, IllegalArgumentException, UnsupportedEncodingException, IOException, UnknownServiceException, CMSException, ParseException, CertificateException, JSONException {
         
         String certificate = callDigicert("certificate/" + certificateId + "/download/format/p7b", apiKey);
 
-        byte[] source = DatatypeConverter.parseBase64Binary(new String(certificate.getBytes(), Charset.forName("UTF-8")));
-        CMSSignedData signature = new CMSSignedData(source);
-        Store cs = signature.getCertificates();
+        if (certificate == null) {
+            System.out.println("certificate is null");
+            System.out.println("orderId:\t"+ orderId + "\tcertificateId:\t" + certificateId + "\tparentId:\t" + parentId + "\tparentName:\t"+parentName + "\tApiKey:\t"+apiKey);
+        } else {
+            
+            byte[] source = DatatypeConverter.parseBase64Binary(new String(certificate.getBytes(Charset.forName("UTF-8"))));
+            CMSSignedData signature = new CMSSignedData(source);
+            Store cs = signature.getCertificates();
 
-        ArrayList<X509CertificateHolder> listCertData = new ArrayList(cs.getMatches(null));
+            ArrayList<X509CertificateHolder> listCertData = new ArrayList(cs.getMatches(null));
 
-        // we want only first certificate
-        X509Certificate cert = new JcaX509CertificateConverter().getCertificate(listCertData.get(0));
+            // we want only first certificate
+            X509Certificate cert = new JcaX509CertificateConverter().getCertificate(listCertData.get(0));
 
-        Date[] validBetween = new Date[2];            
-        validBetween[NOT_BEFORE] = cert.getNotBefore();
-        validBetween[NOT_AFTER] = cert.getNotAfter();
+            CertificateData data = new CertificateData(cert, orderId, parentId, parentName);
 
-        cache.put(orderId, validBetween);
+            // store found certificate in HashMap
+            cache.put(orderId, data);
 
-        if (isCertValidAtDay(cert, referenceDate)) {
-            int value = 0;
-            if (parentId_has_numOfCerts.get(parentId) != null) {
-                value = parentId_has_numOfCerts.get(parentId);
+            if (isCertValidAtDay(cert, referenceDate)) {
+                int value = 0;
+                if (parentId_has_numOfCerts.get(parentId) != null) {
+                    value = parentId_has_numOfCerts.get(parentId);
+                }
+                parentId_has_numOfCerts.put(parentId, value+1);
             }
-            parentId_has_numOfCerts.put(parentId, value+1);
         }
     }
     
@@ -305,7 +304,7 @@ public class DigicertConnector extends Connector {
      * @param data to by saved
      * @throws IOException if an I/O error occurs while writing stream header
      */
-    private void saveGeneratedData(HashMap<Integer, Date[]> data) throws IOException {
+    private void saveGeneratedData(HashMap<Integer, CertificateData> data) throws IOException {
         try (ObjectOutputStream oos = new ObjectOutputStream (new FileOutputStream("data.properties"))) {
             oos.writeObject(data);
         }
@@ -316,47 +315,20 @@ public class DigicertConnector extends Connector {
      * 
      * @return generated data if exists. Else returns new empty HashMap
      */
-    private HashMap<Integer, Date[]> loadGeneratedData() {
-        HashMap<Integer, Date[]> data = new HashMap<>();
+    private HashMap<Integer, CertificateData> loadGeneratedData() {
+        HashMap<Integer, CertificateData> data = new HashMap<>();
         
-        try {
-            ObjectInputStream ois = new ObjectInputStream(new FileInputStream("data.properties"));
+        try (ObjectInputStream ois = new ObjectInputStream(new FileInputStream("data.properties"))) {
             Object readMap = ois.readObject();
             if(readMap != null && readMap instanceof HashMap) {
-                data.putAll((HashMap) readMap);
-            }
-            ois.close();
-            
-            System.out.println(ANSI_GREEN + "Great :) Data already exist. The size is " + data.size());
+                data.putAll((Map<? extends Integer, ? extends CertificateData>) readMap);
+            }           
         } catch (IOException | ClassNotFoundException e) {
             // data do not exist yet            
             System.out.println(ANSI_RED + "Data do not exist yet...");
         }
+        System.out.println(ANSI_GREEN + "Great :) Data already exist. The size is " + data.size());
         
         return data;
     }
-
-    /**
-     * traverses all the organization...
-     * 
-     * @throws IOException DIGICERT standard exceptions...
-     * @throws MalformedURLException DIGICERT standard exceptions...
-     * @throws JSONException DIGICERT standard exceptions...
-     */
-    private void getOrganizations() throws IOException, MalformedURLException, JSONException {
-        
-        JSONObject organizations = callDigicert("organization", -1);
-        
-        JSONArray jsonArray = organizations.getJSONArray("organizations");
-        
-        for (int i=0; i<jsonArray.length(); i++) {
-            JSONObject organization = jsonArray.getJSONObject(i);
-            
-            int orgId = organization.getInt("id");
-            
-            JSONObject theOrganization = callDigicert("organization/" + orgId,-1);
-            
-            //System.out.println("result is the same...");
-        }        
-    }    
 }

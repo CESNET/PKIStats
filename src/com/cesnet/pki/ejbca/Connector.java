@@ -1,5 +1,6 @@
 package com.cesnet.pki.ejbca;
 
+import com.cesnet.pki.Diff;
 import com.cesnet.pki.DigicertConnector;
 import com.cesnet.pki.EjbcaConnector;
 import com.cesnet.pki.LdapConnector;
@@ -60,45 +61,23 @@ public class Connector {
         Connector c = new Connector();
         /*  
         System.out.println(ANSI_GREEN+"EJBCA:");
-        EjbcaConnector ejbcaCon = new EjbcaConnector();
-        ejbcaCon.generateValidCerts();
-        c.printResults(ejbcaCon.validCertificates);
+        System.out.println(c.getJSON("ejbca"));
         
         System.out.println("=======================");
 
         System.out.println(ANSI_BLUE+"LDAP:");
-        LdapConnector ldapCon = new LdapConnector();
-        ldapCon.generateValidCerts();
-        c.printResults(ldapCon.validCertificates);
+        System.out.println(c.getJSON("ldap"));
        
         System.out.println("=======================");
              
         System.out.println(ANSI_PURPLE+"DIGICERT:");
-        DigicertConnector digicertCon = new DigicertConnector();
-        digicertCon.generateValidCerts();
+        System.out.println(c.getJSON("digicert"));
         */
-        
-        /*
-        System.out.println(c.compareDate);        
-        String json = c.getLdapJSON("client");
-        System.out.println(json + "\n");        
-//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_client_v2");
-        System.out.println(c.compareDate);
-        json = c.getLdapJSON("all");
-        System.out.println(json + "\n");
-//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_all_v2");
-        System.out.println(c.compareDate);
-        json = c.getLdapJSON("server");
-        System.out.println(json + "\n");
-//        c.saveJsonResultsToFile(json, c.compareDate+"_ldap_server_v2");
-        */
-//        DigicertConnector digicertCon = new DigicertConnector();
-//        digicertCon.generateValidCerts();
-//        c.printResults(digicertCon.validCertificates);
         
         System.out.println(c.getJSON("digicert"));
-        
-        
+
+//        Diff d = new Diff();
+//        d.conputeDifference();
     }
     
     public Connector() {
@@ -130,7 +109,7 @@ public class Connector {
      *        all cases returns all valid CAs
      * @return validCertificates converted to JSON
      */
-    public String getJSON(String select) {
+    private String getJSON(String select) {
 
         Map<String, Integer> completeMap = new TreeMap<>();
 
@@ -156,11 +135,20 @@ public class Connector {
                 break;
         }
 
-        // create JSON alphabeticaly ordered
+        return getJSON(completeMap);
+    }
+    
+    /**
+     * @param map to convert
+     * @return given map converted to JSON
+     */
+    public String getJSON(Map<String, Integer> map) {
+        
+        // create JSON
         StringBuilder handmadeJSON = new StringBuilder();
         handmadeJSON.append("{\"organizations\":[");
 
-        for (Map.Entry<String, Integer> entry : completeMap.entrySet()) {
+        for (Map.Entry<String, Integer> entry : map.entrySet()) {
             handmadeJSON.append("{\"name\":\"").append(entry.getKey()).append("\",\"count\":\"").append(entry.getValue()).append("\"},");
         }
 
@@ -177,24 +165,11 @@ public class Connector {
      */
     public String getLdapJSON(String select) {
 
-        Map<String, Integer> completeMap = new TreeMap<>();
-        
         LdapConnector ldapCon = new LdapConnector();
         ldapCon.generateValidCerts(select);
-        completeMap = ldapCon.validCertificates;            
+        Map<String, Integer> completeMap = ldapCon.validCertificates;            
 
-        // create JSON alphabeticaly ordered
-        StringBuilder handmadeJSON = new StringBuilder();
-        handmadeJSON.append("{\"organizations\":{");
-
-        for (Map.Entry<String, Integer> entry : completeMap.entrySet()) {
-            handmadeJSON.append("\"").append(entry.getKey()).append("\":[{\"name\":\"").append(entry.getKey()).append("\",\"count\":\"").append(entry.getValue()).append("\"}],");
-        }
-
-        handmadeJSON.deleteCharAt(handmadeJSON.length()-1);
-        handmadeJSON.append("}}");
-
-        return handmadeJSON.toString();
+        return getJSON(completeMap);
     }
     
     /**
@@ -238,8 +213,8 @@ public class Connector {
      * @return organization name parsed from DN if exists, else null
      * @throws InvalidNameException if a syntax violation is detected. 
      */
-    protected String getOrganizationName(X509Certificate cert) throws InvalidNameException {
-        String dn = (String)cert.getSubjectDN().getName();
+    protected String getOrganizationNameFromCertificate(X509Certificate cert) throws InvalidNameException {
+        String dn = cert.getSubjectDN().getName();
 
         LdapName ldapDN = new LdapName(dn);
         List<Rdn> listRdn = ldapDN.getRdns();
@@ -286,19 +261,7 @@ public class Connector {
 
         return (date.after(cert.getNotBefore()) && date.before(cert.getNotAfter()));
     }
-    
-    /**
-     * Checks if certificate is valid at given date. It does not check revocation status.
-     * 
-     * @param certificateDates selected notBefore and notAfter parameters from certificate
-     * @param date date to compare
-     * @return true if certificate is valid at given date
-     */
-    protected boolean isCertValidAtDay(Date[] certificateDates, Date date) {
-
-        return (date.after(certificateDates[NOT_BEFORE]) && date.before(certificateDates[NOT_AFTER]));
-    }
-
+ 
     /**
      * prints number of valid certificate at specific date for each organization
      * 
@@ -324,5 +287,25 @@ public class Connector {
         c.setTime(format.parse(incrementalDate));
         c.add(Calendar.MONTH, 1); // number of days/months to add
         return incrementalDate = format.format(c.getTime()); // incrementalDate has a value of the new date
+    }
+        
+    /**
+     * Returns the first value in the array which is not null.
+     * If all the values are null or the array is null
+     * or empty then null is returned.
+     *
+     * @param <T> the component type of the array
+     * @param values  the values to test, may be {@code null} or empty
+     * @return the first value from {@code values} which is not {@code null}, or {@code null} if there are no non-null values
+     */
+    protected <T> T firstNonNull(T... values) {
+        if (values != null) {
+            for (T val : values) {
+                if (val != null) {
+                    return val;
+                }
+            }
+        }
+        return null;
     }
 }

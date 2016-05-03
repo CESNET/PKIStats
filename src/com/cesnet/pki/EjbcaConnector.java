@@ -33,12 +33,12 @@ public class EjbcaConnector extends Connector {
 
     private final String ejbcaSection = "ejbca";    
 
-    private final int MATCH_TYPE_BEGINSWITH = 1;
-    private final int MATCH_WITH_USERNAME = 0;    
-    private final int EJBCA_MAX_RETURN_VALUE = 100;
-    private final int NOT_REVOKED = -1;
+    private static final int MATCH_TYPE_BEGINSWITH = 1;
+    private static final int MATCH_WITH_USERNAME = 0;    
+    private static final int EJBCA_MAX_RETURN_VALUE = 100;
+    private static final int NOT_REVOKED = -1;
 
-    private final String characters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-@";
+    private final static String characters = "0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-@";
     private final HashSet<String> ExcludeOrgs = new HashSet<>();
     private final HashSet<String> ExcludeUsers = new HashSet<>();
     private final HashSet<UserDataVOWS> UserDataList = new HashSet<>();
@@ -134,7 +134,7 @@ public class EjbcaConnector extends Connector {
         URL url = new URL(properties.get(ejbcaSection, "url"));
         Service service = Service.create(url, qname);
 
-        ejbcaws = (EjbcaWS) service.getPort(new QName(properties.get(ejbcaSection, "portURI"), properties.get(ejbcaSection, "portLocalPart")), EjbcaWS.class);
+        ejbcaws = service.getPort(new QName(properties.get(ejbcaSection, "portURI"), properties.get(ejbcaSection, "portLocalPart")), EjbcaWS.class);
     }
 
     /**
@@ -217,7 +217,7 @@ public class EjbcaConnector extends Connector {
                 
                 cert = decodeCertificate(source);
 
-                organization = getOrganizationName(cert);
+                organization = getOrganizationNameFromCertificate(cert);
 
                 // do not use certificates from excluded organization
                 if (ExcludeOrgs.contains(organization)) {
