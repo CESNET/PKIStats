@@ -29,10 +29,6 @@ public class LdapConnector extends Connector {
    
     private LdapContext ctx;
     
-    private final int ORG_NAME = 0;
-    private final int ORG_CS_NAME = 1;
-    private final int ORG_EN_NAME = 2;
-
     private final String searchFilterAllCerts = "(&(objectClass=tcs2Order)(entryStatus=issued))";
     private final String searchFilterAllServerCerts = "(&(objectClass=tcs2ServerOrder)(entryStatus=issued))";
     private final String searchFilterAllClientCerts = "(&(objectClass=tcs2ClientOrder)(entryStatus=issued))";
@@ -124,17 +120,19 @@ public class LdapConnector extends Connector {
      * @throws NamingException if a naming exception is encountered
      * @throws MalformedURLException if no protocol is specified, or an unknown protocol is found, or spec is null
      */
-    protected HashMap<Integer, String[]> findApiKeysForDigicert() throws NamingException, MalformedURLException {
+    protected HashMap<Integer, String> findApiKeysForDigicert() throws NamingException, MalformedURLException {
 
         // connect to ldap
         connect();
 
-        String orgName = null, orgNameCs = null, orgNameEn = null;
+        // init organizationNames
+        organizationNames = findOrganizationNames();
+        
         String apiKey;
         int organizationId;
         
         // create api key map
-        HashMap<Integer, String[]> map = new HashMap<>();
+        HashMap<Integer, String> map = new HashMap<>();
         
         NamingEnumeration<SearchResult> namingEnum = ctx.search(searchBaseDN_TCS2, searchFilter_ApiKey, getSimpleSearchControls());
         
@@ -145,21 +143,7 @@ public class LdapConnector extends Connector {
             String externId = (String) getAttribute("tcs2ExtID",result);                
             organizationId = Integer.parseInt(externId);
 
-            String orgDN = (String) getAttribute("tcs2CesnetOrgDN", result);    
-
-            NamingEnumeration<SearchResult> namingEnum2 = ctx.search(orgDN, searchFilterOrgName, getSimpleSearchControls());                
-
-            // it should has only one result
-            SearchResult result2 = namingEnum2.next ();
-            namingEnum2.close();
-
-            // it always has all three attribute
-            orgName = (String) getAttribute("o", result2);
-            orgNameCs = (String) getAttribute("o;lang-cs", result2);
-            orgNameEn = (String) getAttribute("o;lang-en", result2);
-
-            map.put(organizationId, new String[]{apiKey, orgName,orgNameCs,orgNameEn});
-            
+            map.put(organizationId, apiKey);
         }
         
         ctx.close();
@@ -235,7 +219,7 @@ public class LdapConnector extends Connector {
                 // store found certificate in HashSet
                 certData.add(decodedCert);
                 
-                // find search context to obtain parameter tcs2ExtID
+                // find value of search context to obtain parameter tcs2ExtID
                 String dc = result.getName();
                 int idx = dc.lastIndexOf(',')+1;
                 // select only part of DC
@@ -252,6 +236,8 @@ public class LdapConnector extends Connector {
                     int count = validCertsMap.containsKey(organization) ? validCertsMap.get(organization) : 0;
                     validCertsMap.put(organization, count + 1);
                 }
+            } else {
+                //System.out.println("CN:\t"+result.getAttributes().get("cn").get()+ ANSI_YELLOW+"\ttcs2Certificate:\t"+ANSI_RESET+result.getAttributes().get("tcs2crtSubject").get());
             }
         }
         ctx.close();
@@ -280,7 +266,7 @@ public class LdapConnector extends Connector {
      * @param lang id of constant language
      * @return returns organization name in required language if exists. Else null.
      */
-    private String getOrganizationNameFromLdap(String orgId, int lang) {
+    protected String getOrganizationNameFromLdap(String orgId, int lang) {
         
         if (orgId == null) {
             return null;
@@ -289,8 +275,8 @@ public class LdapConnector extends Connector {
         if (organizationNames.containsKey(orgId)) {
             if (organizationNames.get(orgId)[lang] != null) {
                 return organizationNames.get(orgId)[lang];
-            } else { // always has three names (never else)
-                System.out.println("nema jazyk s id " + lang);
+            } else {
+                System.out.println("organization with id "+orgId+" does not have in Ldap language attribute with requested id " + lang);
                 return firstNonNull(organizationNames.get(orgId));
             }
         }

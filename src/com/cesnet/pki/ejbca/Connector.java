@@ -46,16 +46,20 @@ public class Connector {
 
     protected final int NOT_BEFORE = 0;
     protected final int NOT_AFTER = 1;
+        
+    public static final int ORG_NAME = 0;
+    public static final int ORG_CS_NAME = 1;
+    public static final int ORG_EN_NAME = 2;
     
-    public static final String ANSI_RESET = "\u001B[0m";
-    public static final String ANSI_BLACK = "\u001B[30m";
-    public static final String ANSI_RED = "\u001B[31m";
-    public static final String ANSI_GREEN = "\u001B[32m";
-    public static final String ANSI_YELLOW = "\u001B[33m";
-    public static final String ANSI_BLUE = "\u001B[34m";
-    public static final String ANSI_PURPLE = "\u001B[35m";
-    public static final String ANSI_CYAN = "\u001B[36m";
-    public static final String ANSI_WHITE = "\u001B[37m";
+    public static final String ANSI_RESET   = "\u001B[0m";
+    public static final String ANSI_BLACK   = "\u001B[30m";
+    public static final String ANSI_RED     = "\u001B[31m";
+    public static final String ANSI_GREEN   = "\u001B[32m";
+    public static final String ANSI_YELLOW  = "\u001B[33m";
+    public static final String ANSI_BLUE    = "\u001B[34m";
+    public static final String ANSI_PURPLE  = "\u001B[35m";
+    public static final String ANSI_CYAN    = "\u001B[36m";
+    public static final String ANSI_WHITE   = "\u001B[37m";
     
     public static void main(String[] args) throws ParseException {
         Connector c = new Connector();
@@ -73,11 +77,30 @@ public class Connector {
         System.out.println(ANSI_PURPLE+"DIGICERT:");
         System.out.println(c.getJSON("digicert"));
         */
-        
-        System.out.println(c.getJSON("digicert"));
 
-//        Diff d = new Diff();
-//        d.conputeDifference();
+               System.out.println(c.getJSON("digicert"));
+
+        Diff d = new Diff();
+    System.out.println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+
+        System.out.println(ANSI_CYAN+"\t  LDAP ALL:\n"+ANSI_CYAN+"========================");        
+        System.out.println(c.getJSON("ldap"));
+        System.out.println(ANSI_CYAN+"========================");
+        d.computeDifference("all");
+//
+//    System.out.println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+//        
+//        System.out.println(ANSI_CYAN+"\tLDAP SERVER:\n"+ANSI_CYAN+"========================");        
+//        System.out.println(c.getLdapJSON("server"));
+//        System.out.println(ANSI_CYAN+"========================");
+//        d.computeDifference("server");
+//        
+//    System.out.println("XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX");
+//
+//        System.out.println(ANSI_CYAN+"\tLDAP CLIENT:\n"+ANSI_CYAN+"========================");        
+//        System.out.println(c.getLdapJSON("client"));
+//        System.out.println(ANSI_CYAN+"========================");
+//        d.computeDifference("client");
     }
     
     public Connector() {
@@ -136,6 +159,11 @@ public class Connector {
         }
 
         return getJSON(completeMap);
+    }
+    
+    private String getJSONldap(String select) {
+        
+        return getJSONldap(select);        
     }
     
     /**

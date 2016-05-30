@@ -48,15 +48,11 @@ public class DigicertConnector extends Connector {
 
     private final String digicertSection = "digicert";   
     private final String urlBase = "https://www.digicert.com/services/v2/";
-    private final int API_KEY = 0;
-    private final int ORG_NAME = 1;
-    private final int ORG_CS_NAME = 2;
-    private final int ORG_EN_NAME = 3;
     
     private final int LIMIT = 1000;
     private final String key = properties.get(digicertSection,"apiKey");
 
-    private HashMap<Integer, String[]> parentInfo;
+    private HashMap<Integer, String> parentId_has_apiKey;
     private HashMap<Integer, Integer> parentId_has_numOfCerts = new HashMap<>();
     
     private HashMap<Integer, CertificateData> cache = new HashMap<>();
@@ -66,13 +62,13 @@ public class DigicertConnector extends Connector {
         super.generateValidCerts();
         
         // choose json language
-        int lang = ORG_EN_NAME;
+        int lang = ORG_NAME;
         
         try {
             // get api keys to all organizations
             LdapConnector lc = new LdapConnector();
-            parentInfo = lc.findApiKeysForDigicert();            
-                    
+            parentId_has_apiKey = lc.findApiKeysForDigicert();
+            
             // init
             cache = loadGeneratedData();
             
@@ -82,16 +78,15 @@ public class DigicertConnector extends Connector {
             int offset = 0;
             countValidCerts(offset);
             
-            for (Map.Entry<Integer, Integer> entry : parentId_has_numOfCerts.entrySet()) {
-
-                int parentId = entry.getKey();
-                String organizationName = parentInfo.get(parentId)[lang];
-
-                validCertificates.put(organizationName, entry.getValue());
-            }
-    
             // save cache
             saveGeneratedData(cache);
+            
+            for (Map.Entry<Integer, Integer> entry : parentId_has_numOfCerts.entrySet()) {
+                int parentId = entry.getKey();
+                
+                String organizationName = lc.getOrganizationNameFromLdap(String.valueOf(parentId),lang);
+                validCertificates.put(organizationName, entry.getValue());
+            }
         
         } catch ( IOException | NamingException | JSONException | IllegalArgumentException | CMSException | ParseException | CertificateException ex) {
             Logger.getLogger(DigicertConnector.class.getName()).log(Level.SEVERE, null, ex);
@@ -127,8 +122,18 @@ public class DigicertConnector extends Connector {
         String rawJson;
         try (BufferedReader reader = new BufferedReader(new InputStreamReader(conn.getInputStream(), "UTF-8"))) {
             rawJson = reader.readLine();
-        }
-        return new JSONObject(rawJson);
+            
+            return new JSONObject(rawJson);
+            
+        } catch(Exception e) {
+            System.out.println(e.getMessage());
+            try {
+                Thread.sleep(1000*60*5);
+            } catch (InterruptedException ex) {
+            }
+            
+            return callDigicert(urlSuffix, offset);
+        }        
     }
     
     /**
@@ -201,18 +206,17 @@ public class DigicertConnector extends Connector {
 
             String status = order.getString("status");
 
-            // if status is one of processing, issued, revoked, canceled or needs_approval
-            if(!status.equals("rejected") && !status.equals("needs_approval") && !status.equals("pending")) {
+            if(status.equals("issued") || status.equals("revoked")) {
     
                 // if the result is in the cache
                 if (cache.containsKey(order.getInt("id"))) {                     
                     
                     JSONObject container = order.getJSONObject("container");
                     int parentId = container.getInt("id");
-                  
+                    
                     // get certificate validation
                     CertificateData data = cache.get(order.getInt("id"));                    
-                    
+                                        
                     if (isCertValidAtDay(data.certificate, referenceDate)) {
                         
                         int value = 0;
@@ -230,12 +234,9 @@ public class DigicertConnector extends Connector {
 
                     JSONObject container = order.getJSONObject("container");
                     int parentId = container.getInt("id");
-                    
-                    if (parentInfo.containsKey(parentId)) { // because of CESNET NREN
-                        decodeCertificate(order.getInt("id"), certificateId, parentId, container.getString("name"), parentInfo.get(parentId)[API_KEY]);
-                    } else {
-                        System.out.println("ldap doesn't know id: " + parentId);
-                        System.out.println(order);
+                                        
+                    if (parentId_has_apiKey.containsKey(parentId)) { // because of CESNET NREN
+                        decodeCertificate(order.getInt("id"), certificateId, parentId, container.getString("name"), parentId_has_apiKey.get(parentId));
                     }
                 }
             }
@@ -322,12 +323,13 @@ public class DigicertConnector extends Connector {
             Object readMap = ois.readObject();
             if(readMap != null && readMap instanceof HashMap) {
                 data.putAll((Map<? extends Integer, ? extends CertificateData>) readMap);
-            }           
+            }  
+            System.out.println(ANSI_GREEN + "Great :) Data already exist. The size is " + data.size());
+                 
         } catch (IOException | ClassNotFoundException e) {
             // data do not exist yet            
             System.out.println(ANSI_RED + "Data do not exist yet...");
         }
-        System.out.println(ANSI_GREEN + "Great :) Data already exist. The size is " + data.size());
         
         return data;
     }
